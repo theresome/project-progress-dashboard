@@ -4,13 +4,14 @@
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>项目进展台</title>
+  <link rel="icon" href="assets/icon.svg" type="image/svg+xml">
   <link rel="stylesheet" href="styles.css">
   <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
 </head>
 <body>
   <aside class="sidebar">
     <div class="brand">
-      <div class="brand-mark">D</div>
+      <div class="brand-mark">文</div>
       <div><strong>项目进展台</strong><span>进度与汇报工作台</span></div>
     </div>
     <nav id="nav">
@@ -36,6 +37,7 @@
       </div>
       <div class="header-actions">
         <span class="sync-state" id="syncState">本地保存</span>
+        <a class="ghost download-link" id="windowsDownload" href="https://github.com/theresome/project-progress-dashboard/releases/latest" target="_blank" rel="noopener">下载 Windows 版</a>
         <button class="ghost" id="exportBtn">导出周报</button>
         <button class="primary" data-open-log>+ 记录今日</button>
       </div>

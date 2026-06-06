@@ -1,0 +1,51 @@
+{
+  "name": "project-progress-dashboard",
+  "version": "1.0.0",
+  "description": "项目进展台 Windows 桌面应用",
+  "main": "desktop-main.js",
+  "author": "Project Progress Dashboard",
+  "license": "MIT",
+  "scripts": {
+    "desktop": "electron .",
+    "build:win": "node scripts/check-signing.js && electron-builder --win nsis portable",
+    "build:win:unsigned": "electron-builder --win nsis portable"
+  },
+  "devDependencies": {
+    "electron": "^37.2.0",
+    "electron-builder": "^26.0.12"
+  },
+  "build": {
+    "appId": "com.projectprogress.dashboard",
+    "productName": "项目进展台",
+    "directories": {
+      "output": "release"
+    },
+    "files": [
+      "index.html",
+      "app.js",
+      "styles.css",
+      "supabase-config.js",
+      "assets/**/*",
+      "desktop-main.js",
+      "package.json"
+    ],
+    "win": {
+      "icon": "assets/icon.png",
+      "target": [
+        "nsis",
+        "portable"
+      ],
+      "signAndEditExecutable": true,
+      "artifactName": "${productName}-${version}-${arch}-setup.${ext}"
+    },
+    "nsis": {
+      "oneClick": false,
+      "allowToChangeInstallationDirectory": true,
+      "createDesktopShortcut": true,
+      "createStartMenuShortcut": true
+    },
+    "portable": {
+      "artifactName": "${productName}-${version}-${arch}-portable.${ext}"
+    }
+  }
+}

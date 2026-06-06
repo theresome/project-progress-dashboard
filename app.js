@@ -313,7 +313,8 @@ $("#signUpBtn").onclick=async()=>{
   if(!form.reportValidity())return;
   const f=new FormData(form);
   $("#authMessage").textContent="正在注册...";
-  const {data:result,error}=await supabaseClient.auth.signUp({email:f.get("email"),password:f.get("password"),options:{emailRedirectTo:location.href.split("#")[0]}});
+  const redirectUrl=window.SUPABASE_CONFIG?.redirectUrl||location.href.split("#")[0];
+  const {data:result,error}=await supabaseClient.auth.signUp({email:f.get("email"),password:f.get("password"),options:{emailRedirectTo:redirectUrl}});
   if(error){$("#authMessage").textContent=error.message;return}
   $("#authMessage").textContent=result.session?"注册成功，正在同步数据":"注册成功，请前往邮箱确认后再登录。";
 };
