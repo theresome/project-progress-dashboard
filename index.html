@@ -120,7 +120,10 @@
       <div class="dialog-head"><div><span class="kicker">今日复盘</span><h2>记录项目进展</h2></div><button class="close" type="button" data-close-dialog aria-label="关闭">×</button></div>
       <label>今天完成了什么？<textarea name="done" required placeholder="例如：完成核心方案初稿，并与相关成员确认下一步"></textarea></label>
       <div class="form-grid">
+        <label>记录日期<input name="date" type="date" required></label>
         <label>所属模块<select name="module" id="moduleSelect"></select></label>
+      </div>
+      <div class="form-grid">
         <label>投入时长（小时）<input name="hours" type="number" min="0.5" step="0.5" value="2"></label>
       </div>
       <label>遇到的问题<textarea name="problem" placeholder="哪里卡住了？影响是什么？"></textarea></label>
@@ -145,7 +148,8 @@
 
   <dialog id="projectDialog">
     <form method="dialog" id="projectForm">
-      <div class="dialog-head"><div><span class="kicker">项目管理</span><h2>新建项目</h2></div><button class="close" type="button" data-close-dialog aria-label="关闭">×</button></div>
+      <input name="projectId" type="hidden">
+      <div class="dialog-head"><div><span class="kicker">项目管理</span><h2 id="projectDialogTitle">新建项目</h2></div><button class="close" type="button" data-close-dialog aria-label="关闭">×</button></div>
       <label>项目名称<input name="name" required placeholder="例如：品牌升级项目"></label>
       <label>项目说明<textarea name="description" placeholder="简要说明项目目标和范围"></textarea></label>
       <label>项目分类<input name="category" placeholder="例如：课程研发、品牌设计、运营活动"></label>
@@ -154,7 +158,18 @@
         <label>结束日期<input name="endDate" type="date"></label>
       </div>
       <label>项目状态<select name="status"><option value="planning">规划中</option><option value="active" selected>进行中</option><option value="paused">已暂停</option><option value="completed">已完成</option></select></label>
-      <button class="primary wide" value="default">创建项目</button>
+      <button class="primary wide" id="projectSubmitBtn" value="default">创建项目</button>
+    </form>
+  </dialog>
+
+  <dialog id="moduleDialog">
+    <form method="dialog" id="moduleForm">
+      <input name="moduleId" type="hidden">
+      <div class="dialog-head"><div><span class="kicker">进度模块</span><h2>编辑模块内容</h2></div><button class="close" type="button" data-close-dialog aria-label="关闭">×</button></div>
+      <label>模块名称<input name="name" required></label>
+      <label>模块说明<textarea name="description" required></textarea></label>
+      <label>当前进度（%）<input name="progress" type="number" min="0" max="100" required></label>
+      <button class="primary wide" value="default">保存模块</button>
     </form>
   </dialog>
 

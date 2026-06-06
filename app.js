@@ -1,4 +1,4 @@
-const modules = [
+const defaultModules = [
   {id:"planning",name:"需求与规划",desc:"目标、范围、里程碑与资源安排",progress:72,color:"#327b5d"},
   {id:"design",name:"方案设计",desc:"方案制定、评审与关键决策",progress:58,color:"#a1b66c"},
   {id:"execution",name:"执行制作",desc:"核心任务实施与成果产出",progress:64,color:"#f0a85b"},
@@ -6,6 +6,7 @@ const modules = [
   {id:"collaboration",name:"沟通与协作",desc:"跨团队同步、依赖与反馈管理",progress:55,color:"#9c7ab4"},
   {id:"delivery",name:"交付与复盘",desc:"成果交付、总结与经验沉淀",progress:35,color:"#dc6b62"}
 ];
+let modules=structuredClone(defaultModules);
 
 const seed = {
   logs:[
@@ -22,17 +23,18 @@ const seed = {
   progress:Object.fromEntries(modules.map(m=>[m.id,m.progress]))
 };
 
-const blankData=()=>({logs:[],issues:[],progress:Object.fromEntries(modules.map(m=>[m.id,0]))});
+const blankData=()=>({logs:[],issues:[],progress:Object.fromEntries(defaultModules.map(m=>[m.id,0])),modules:structuredClone(defaultModules)});
 const legacyData=JSON.parse(localStorage.getItem("project-progress-data") || "null");
 let workspace=JSON.parse(localStorage.getItem("project-workspace-data-v1") || "null");
 if(!workspace){
   const firstId=`project-${Date.now()}`;
   workspace={activeProjectId:firstId,projects:[{id:firstId,name:"我的第一个项目",category:"通用项目",description:"从这里开始整理项目周期内的进展、问题与工作记录。",startDate:"2026-06-01",endDate:"",status:"active",data:legacyData||structuredClone(seed)}]};
 }
-workspace.projects.forEach(project=>{project.category=project.category||"未分类";project.data.logs=project.data.logs.map((log,index)=>({...log,id:log.id||`log-${log.date}-${index}`}))});
+workspace.projects.forEach(project=>{project.category=project.category||"未分类";project.data.modules=project.data.modules||structuredClone(defaultModules);project.data.logs=project.data.logs.map((log,index)=>({...log,id:log.id||`log-${log.date}-${index}`}))});
 localStorage.setItem("project-workspace-data-v1",JSON.stringify(workspace));
 let activeProject=workspace.projects.find(project=>project.id===workspace.activeProjectId)||workspace.projects[0];
 let data=activeProject.data;
+modules=data.modules;
 const $=s=>document.querySelector(s), $$=s=>[...document.querySelectorAll(s)];
 const mod=id=>modules.find(m=>m.id===id) || modules[0];
 const save=()=>localStorage.setItem("project-workspace-data-v1",JSON.stringify(workspace));
@@ -45,6 +47,8 @@ let projectCategoryFilter="all";
 function render(){
   activeProject=workspace.projects.find(project=>project.id===workspace.activeProjectId)||workspace.projects[0];
   data=activeProject.data;
+  modules=data.modules;
+  refreshModuleOptions();
   $("#activeProjectName").textContent=activeProject.name;
   $("#activeProjectMeta").textContent=`${projectStatusName[activeProject.status]} · ${activeProject.startDate}${activeProject.endDate?` 至 ${activeProject.endDate}`:""}`;
   const totalHours=data.logs.reduce((a,b)=>a+Number(b.hours),0);
@@ -78,12 +82,13 @@ function renderProjects(){
   const visibleProjects=workspace.projects.filter(project=>projectCategoryFilter==="all"||project.category===projectCategoryFilter);
   $("#projectList").innerHTML=visibleProjects.map(project=>{
     const projectData=project.data;
-    const progress=Math.round(Object.values(projectData.progress).reduce((a,b)=>a+b,0)/modules.length);
+    const progress=Math.round(Object.values(projectData.progress).reduce((a,b)=>a+b,0)/(projectData.modules||defaultModules).length);
     const hours=projectData.logs.reduce((a,b)=>a+Number(b.hours),0);
     const open=projectData.issues.filter(issue=>issue.status!=="solved").length;
-    return `<article class="project-list-card ${project.id===workspace.activeProjectId?"active":""}"><div class="entry-head"><span class="status-pill ${project.status}">${projectStatusName[project.status]}</span>${project.id===workspace.activeProjectId?'<span class="tag">当前项目</span>':""}</div><h3>${project.name}</h3><span class="tag">${project.category}</span><p>${project.description||"暂无项目说明"}</p><div class="project-period">${project.startDate||"未设置开始日期"}${project.endDate?` 至 ${project.endDate}`:" · 长期项目"}</div><div class="project-stats"><div><strong>${progress}%</strong><span>整体进度</span></div><div><strong>${hours}h</strong><span>工作投入</span></div><div><strong>${open}</strong><span>待解决</span></div></div><select class="project-status-select" data-id="${project.id}">${Object.entries(projectStatusName).map(([key,value])=>`<option value="${key}" ${project.status===key?"selected":""}>${value}</option>`).join("")}</select><div class="project-list-actions"><button class="ghost switch-project" data-id="${project.id}" ${project.id===workspace.activeProjectId?"disabled":""}>${project.id===workspace.activeProjectId?"查看中":"切换项目"}</button><button class="delete-btn delete-project" data-id="${project.id}">删除</button></div></article>`;
+    return `<article class="project-list-card ${project.id===workspace.activeProjectId?"active":""}"><div class="entry-head"><span class="status-pill ${project.status}">${projectStatusName[project.status]}</span>${project.id===workspace.activeProjectId?'<span class="tag">当前项目</span>':""}</div><h3>${project.name}</h3><span class="tag">${project.category}</span><p>${project.description||"暂无项目说明"}</p><div class="project-period">${project.startDate||"未设置开始日期"}${project.endDate?` 至 ${project.endDate}`:" · 长期项目"}</div><div class="project-stats"><div><strong>${progress}%</strong><span>整体进度</span></div><div><strong>${hours}h</strong><span>工作投入</span></div><div><strong>${open}</strong><span>待解决</span></div></div><select class="project-status-select" data-id="${project.id}">${Object.entries(projectStatusName).map(([key,value])=>`<option value="${key}" ${project.status===key?"selected":""}>${value}</option>`).join("")}</select><div class="project-list-actions"><button class="ghost switch-project" data-id="${project.id}" ${project.id===workspace.activeProjectId?"disabled":""}>${project.id===workspace.activeProjectId?"查看中":"切换项目"}</button><button class="ghost edit-project" data-id="${project.id}">编辑</button><button class="delete-btn delete-project" data-id="${project.id}">删除</button></div></article>`;
   }).join("")||`<article class="card"><p>该分类下暂无项目。</p></article>`;
   $$(".project-status-select").forEach(select=>select.onchange=()=>{workspace.projects.find(project=>project.id===select.dataset.id).status=select.value;save();render();toast("项目状态已更新")});
+  $$(".edit-project").forEach(button=>button.onclick=()=>openProjectEditor(workspace.projects.find(project=>project.id===button.dataset.id)));
   $$(".switch-project").forEach(button=>button.onclick=()=>{
     workspace.activeProjectId=button.dataset.id;save();render();showView("dashboard");toast("已切换项目");
   });
@@ -109,8 +114,9 @@ function renderDaily(){
 }
 
 function renderProject(){
-  $("#projectGrid").innerHTML=modules.map((m,i)=>`<article class="project-card" style="--accent:${m.color}"><span class="code">MODULE 0${i+1}</span><h3>${m.name}</h3><p>${m.desc}</p><div class="ring" style="--p:${data.progress[m.id]};--accent:${m.color}"><strong>${data.progress[m.id]}%</strong></div><div class="card-actions"><span>${data.logs.filter(l=>l.module===m.id).length} 条工作记录</span><select class="mini-select progress-select" data-id="${m.id}">${[20,35,50,65,80,100].map(v=>`<option ${Math.abs(v-data.progress[m.id])<8?"selected":""} value="${v}">${v}%</option>`).join("")}</select></div></article>`).join("");
+  $("#projectGrid").innerHTML=modules.map((m,i)=>`<article class="project-card" style="--accent:${m.color}"><div class="entry-head"><span class="code">MODULE 0${i+1}</span><button class="text-btn edit-module" data-id="${m.id}">编辑</button></div><h3>${m.name}</h3><p>${m.desc}</p><div class="ring" style="--p:${data.progress[m.id]};--accent:${m.color}"><strong>${data.progress[m.id]}%</strong></div><div class="card-actions"><span>${data.logs.filter(l=>l.module===m.id).length} 条工作记录</span><select class="mini-select progress-select" data-id="${m.id}">${[0,20,35,50,65,80,100].map(v=>`<option ${Math.abs(v-data.progress[m.id])<8?"selected":""} value="${v}">${v}%</option>`).join("")}</select></div></article>`).join("");
   $$(".progress-select").forEach(s=>s.onchange=()=>{data.progress[s.dataset.id]=Number(s.value);save();render();toast("项目进度已更新")});
+  $$(".edit-module").forEach(button=>button.onclick=()=>openModuleEditor(button.dataset.id));
 }
 
 let issueFilter="all";
@@ -149,18 +155,45 @@ function showView(id){
   $("#pageTitle").textContent={projects:"项目列表",dashboard:"项目总览",daily:"每日记录",project:"项目进度",issues:"问题中心",insights:"效率分析"}[id];
 }
 
+function refreshModuleOptions(){
+  const options=modules.map(m=>`<option value="${m.id}">${m.name}</option>`).join("");
+  $("#moduleSelect").innerHTML=options;
+  $$(".module-options").forEach(s=>s.innerHTML=options);
+}
+
+function openProjectEditor(project=null){
+  const form=$("#projectForm");
+  form.reset();
+  form.elements.projectId.value=project?.id||"";
+  form.elements.name.value=project?.name||"";
+  form.elements.description.value=project?.description||"";
+  form.elements.category.value=project?.category||"";
+  form.elements.startDate.value=project?.startDate||new Date().toISOString().slice(0,10);
+  form.elements.endDate.value=project?.endDate||"";
+  form.elements.status.value=project?.status||"active";
+  $("#projectDialogTitle").textContent=project?"编辑项目":"新建项目";
+  $("#projectSubmitBtn").textContent=project?"保存项目修改":"创建项目";
+  $("#projectDialog").showModal();
+}
+
+function openModuleEditor(moduleId){
+  const module=mod(moduleId);
+  const form=$("#moduleForm");
+  form.elements.moduleId.value=module.id;
+  form.elements.name.value=module.name;
+  form.elements.description.value=module.desc;
+  form.elements.progress.value=data.progress[module.id]||0;
+  $("#moduleDialog").showModal();
+}
+
 $("#todayLabel").textContent=new Intl.DateTimeFormat("zh-CN",{year:"numeric",month:"long",day:"numeric",weekday:"long"}).format(new Date());
-const options=modules.map(m=>`<option value="${m.id}">${m.name}</option>`).join("");
-$("#moduleSelect").innerHTML=options; $$(".module-options").forEach(s=>s.innerHTML=options);
+refreshModuleOptions();
 $("#nav").onclick=e=>e.target.dataset.view&&showView(e.target.dataset.view);
 $$("[data-view-jump]").forEach(b=>b.onclick=()=>showView(b.dataset.viewJump));
-$$("[data-open-log]").forEach(b=>b.onclick=()=>$("#logDialog").showModal());
+$$("[data-open-log]").forEach(b=>b.onclick=()=>{$("#logForm [name=date]").value=new Date().toISOString().slice(0,10);$("#logDialog").showModal()});
 $("#openIssue").onclick=()=>$("#issueDialog").showModal();
 $("#projectCategoryFilter").onchange=e=>{projectCategoryFilter=e.target.value;renderProjects()};
-$("#openProject").onclick=()=>{
-  $("#projectForm [name=startDate]").value=new Date().toISOString().slice(0,10);
-  $("#projectDialog").showModal();
-};
+$("#openProject").onclick=()=>openProjectEditor();
 const closeDialog=dialog=>{
   dialog.close();
   dialog.querySelector("form").reset();
@@ -180,9 +213,10 @@ $$("dialog").forEach(dialog=>{
   });
 });
 $("#logForm input[type=range]").oninput=e=>e.target.nextElementSibling.textContent=`${e.target.value} / 5`;
-$("#logForm").onsubmit=e=>{e.preventDefault();const f=new FormData(e.target);data.logs.unshift({id:`log-${Date.now()}`,date:new Date().toISOString().slice(0,10),done:f.get("done"),module:f.get("module"),hours:Number(f.get("hours")),problem:f.get("problem"),next:f.get("next"),focus:Number(f.get("focus"))});save();render();closeDialog($("#logDialog"));toast("今日工作记录已保存")};
+$("#logForm").onsubmit=e=>{e.preventDefault();const f=new FormData(e.target);data.logs.unshift({id:`log-${Date.now()}`,date:f.get("date"),done:f.get("done"),module:f.get("module"),hours:Number(f.get("hours")),problem:f.get("problem"),next:f.get("next"),focus:Number(f.get("focus"))});data.logs.sort((a,b)=>b.date.localeCompare(a.date));save();render();closeDialog($("#logDialog"));toast("工作记录已保存")};
 $("#issueForm").onsubmit=e=>{e.preventDefault();const f=new FormData(e.target);data.issues.unshift({id:Date.now(),title:f.get("title"),detail:f.get("detail"),module:f.get("module"),priority:f.get("priority"),status:"open"});save();render();closeDialog($("#issueDialog"));toast("问题已加入追踪")};
-$("#projectForm").onsubmit=e=>{e.preventDefault();const f=new FormData(e.target);const id=`project-${Date.now()}`;workspace.projects.unshift({id,name:f.get("name"),category:f.get("category")||"未分类",description:f.get("description"),startDate:f.get("startDate"),endDate:f.get("endDate"),status:f.get("status"),data:blankData()});workspace.activeProjectId=id;projectCategoryFilter="all";save();render();closeDialog($("#projectDialog"));showView("dashboard");toast("新项目已创建并切换")};
+$("#projectForm").onsubmit=e=>{e.preventDefault();const f=new FormData(e.target);const projectId=f.get("projectId");if(projectId){const project=workspace.projects.find(item=>item.id===projectId);Object.assign(project,{name:f.get("name"),category:f.get("category")||"未分类",description:f.get("description"),startDate:f.get("startDate"),endDate:f.get("endDate"),status:f.get("status")});save();render();closeDialog($("#projectDialog"));toast("项目内容已更新");return}const id=`project-${Date.now()}`;workspace.projects.unshift({id,name:f.get("name"),category:f.get("category")||"未分类",description:f.get("description"),startDate:f.get("startDate"),endDate:f.get("endDate"),status:f.get("status"),data:blankData()});workspace.activeProjectId=id;projectCategoryFilter="all";save();render();closeDialog($("#projectDialog"));showView("dashboard");toast("新项目已创建并切换")};
+$("#moduleForm").onsubmit=e=>{e.preventDefault();const f=new FormData(e.target);const module=mod(f.get("moduleId"));module.name=f.get("name");module.desc=f.get("description");data.progress[module.id]=Math.max(0,Math.min(100,Number(f.get("progress"))));save();render();closeDialog($("#moduleDialog"));toast("进度模块已更新")};
 $("#issueFilters").onclick=e=>{if(!e.target.dataset.filter)return;issueFilter=e.target.dataset.filter;$$(".chip").forEach(c=>c.classList.toggle("active",c===e.target));renderIssues()};
 $("#exportBtn").onclick=()=>{
   const lines=[`# ${activeProject.name} · 项目进展周报`,``,`项目周期：${activeProject.startDate}${activeProject.endDate?` 至 ${activeProject.endDate}`:""}`,`整体进度：${Math.round(Object.values(data.progress).reduce((a,b)=>a+b,0)/modules.length)}%`,``,`## 本周完成`,...data.logs.map(l=>`- ${l.done}（${mod(l.module).name}，${l.hours}h）`),``,`## 待解决问题`,...data.issues.filter(i=>i.status!=="solved").map(i=>`- [${priorityName[i.priority]}] ${i.title}`),``,`## 下一步`,...data.logs.slice(0,3).map(l=>`- ${l.next}`)];
