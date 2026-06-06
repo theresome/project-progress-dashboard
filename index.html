@@ -1,0 +1,143 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>项目进展台</title>
+  <link rel="stylesheet" href="styles.css">
+</head>
+<body>
+  <aside class="sidebar">
+    <div class="brand">
+      <div class="brand-mark">D</div>
+      <div><strong>项目进展台</strong><span>进度与汇报工作台</span></div>
+    </div>
+    <nav id="nav">
+      <button class="nav-item active" data-view="dashboard">总览</button>
+      <button class="nav-item" data-view="daily">每日记录</button>
+      <button class="nav-item" data-view="project">项目进度</button>
+      <button class="nav-item" data-view="issues">问题中心</button>
+      <button class="nav-item" data-view="insights">效率分析</button>
+    </nav>
+    <div class="side-foot">
+      <span>当前项目</span>
+      <small>执行推进 · 进行中</small>
+    </div>
+  </aside>
+
+  <main>
+    <header>
+      <div>
+        <p class="eyebrow" id="todayLabel"></p>
+        <h1 id="pageTitle">项目总览</h1>
+      </div>
+      <div class="header-actions">
+        <button class="ghost" id="exportBtn">导出周报</button>
+        <button class="primary" data-open-log>+ 记录今日</button>
+      </div>
+    </header>
+
+    <section class="view active" id="dashboard">
+      <div class="hero">
+        <div>
+          <span class="pill">本周项目脉搏</span>
+          <h2>让每一次推进，都变成<br><em>清晰可见的项目进展</em></h2>
+          <p id="heroSummary"></p>
+          <button class="light-btn" data-open-log>记录今天的进展 →</button>
+        </div>
+        <div class="dino-orbit">
+          <div class="orbit orbit-a"></div><div class="orbit orbit-b"></div>
+          <div class="dino">FLOW</div>
+          <span class="orbit-tag tag-a">规划</span><span class="orbit-tag tag-b">执行</span>
+          <span class="orbit-tag tag-c">协作</span><span class="orbit-tag tag-d">交付</span>
+        </div>
+      </div>
+
+      <div class="metrics" id="metrics"></div>
+
+      <div class="grid two">
+        <article class="card">
+          <div class="card-head"><div><span class="kicker">项目地图</span><h3>模块推进度</h3></div><button class="text-btn" data-view-jump="project">查看全部</button></div>
+          <div id="progressList"></div>
+        </article>
+        <article class="card focus-card">
+          <div class="card-head"><div><span class="kicker">今日聚焦</span><h3>最值得推进的 3 件事</h3></div><span class="focus-score" id="focusScore"></span></div>
+          <div id="focusList"></div>
+        </article>
+      </div>
+
+      <div class="grid two bottom-grid">
+        <article class="card">
+          <div class="card-head"><div><span class="kicker">最近动态</span><h3>每日工作流</h3></div></div>
+          <div id="recentLogs"></div>
+        </article>
+        <article class="card">
+          <div class="card-head"><div><span class="kicker">待解决</span><h3>问题雷达</h3></div><button class="text-btn" data-view-jump="issues">进入问题中心</button></div>
+          <div id="issueRadar"></div>
+        </article>
+      </div>
+    </section>
+
+    <section class="view" id="daily">
+      <div class="section-intro"><div><span class="kicker">轻量复盘</span><h2>每日工作记录</h2><p>用 3 分钟沉淀今日产出、卡点与下一步。</p></div><button class="primary" data-open-log>+ 新建记录</button></div>
+      <div class="timeline" id="dailyTimeline"></div>
+    </section>
+
+    <section class="view" id="project">
+      <div class="section-intro"><div><span class="kicker">项目全景</span><h2>项目进度</h2><p>围绕规划、执行、协作与交付，查看各模块推进情况。</p></div></div>
+      <div class="project-grid" id="projectGrid"></div>
+    </section>
+
+    <section class="view" id="issues">
+      <div class="section-intro"><div><span class="kicker">问题闭环</span><h2>问题中心</h2><p>不只记录问题，也记录验证过程与解决经验。</p></div><button class="primary" id="openIssue">+ 添加问题</button></div>
+      <div class="filter-row" id="issueFilters">
+        <button class="chip active" data-filter="all">全部</button>
+        <button class="chip" data-filter="open">待解决</button>
+        <button class="chip" data-filter="watch">观察中</button>
+        <button class="chip" data-filter="solved">已解决</button>
+      </div>
+      <div class="issue-board" id="issueBoard"></div>
+    </section>
+
+    <section class="view" id="insights">
+      <div class="section-intro"><div><span class="kicker">效率洞察</span><h2>项目节奏分析</h2><p>从记录中识别时间去向、阻塞源和下一步改善动作。</p></div></div>
+      <div class="insight-grid">
+        <article class="card span-2"><div class="card-head"><div><span class="kicker">投入结构</span><h3>本周时间分配</h3></div></div><div class="donut-wrap"><div class="donut" id="donut"><div><strong id="totalHours"></strong><span>小时投入</span></div></div><div class="legend" id="timeLegend"></div></div></article>
+        <article class="card"><div class="card-head"><div><span class="kicker">智能建议</span><h3>提升效率的下一步</h3></div></div><div id="recommendations"></div></article>
+        <article class="card"><div class="card-head"><div><span class="kicker">阻塞分析</span><h3>问题集中在哪里</h3></div></div><div id="blockers"></div></article>
+      </div>
+    </section>
+  </main>
+
+  <dialog id="logDialog">
+    <form method="dialog" id="logForm">
+      <div class="dialog-head"><div><span class="kicker">今日复盘</span><h2>记录项目进展</h2></div><button class="close" value="cancel">×</button></div>
+      <label>今天完成了什么？<textarea name="done" required placeholder="例如：完成核心方案初稿，并与相关成员确认下一步"></textarea></label>
+      <div class="form-grid">
+        <label>所属模块<select name="module" id="moduleSelect"></select></label>
+        <label>投入时长（小时）<input name="hours" type="number" min="0.5" step="0.5" value="2"></label>
+      </div>
+      <label>遇到的问题<textarea name="problem" placeholder="哪里卡住了？影响是什么？"></textarea></label>
+      <label>下一步行动<textarea name="next" required placeholder="写一个足够具体、明天可以直接开始的动作"></textarea></label>
+      <label class="range-label">今日专注度 <input name="focus" type="range" min="1" max="5" value="4"><span>4 / 5</span></label>
+      <button class="primary wide" value="default">保存记录</button>
+    </form>
+  </dialog>
+
+  <dialog id="issueDialog">
+    <form method="dialog" id="issueForm">
+      <div class="dialog-head"><div><span class="kicker">问题闭环</span><h2>添加项目问题</h2></div><button class="close" value="cancel">×</button></div>
+      <label>问题标题<input name="title" required placeholder="一句话描述问题"></label>
+      <label>问题详情<textarea name="detail" required placeholder="说明当前现象、影响和已尝试方法"></textarea></label>
+      <div class="form-grid">
+        <label>所属模块<select name="module" class="module-options"></select></label>
+        <label>优先级<select name="priority"><option value="high">高</option><option value="medium" selected>中</option><option value="low">低</option></select></label>
+      </div>
+      <button class="primary wide" value="default">加入问题中心</button>
+    </form>
+  </dialog>
+
+  <div class="toast" id="toast"></div>
+  <script src="app.js"></script>
+</body>
+</html>
