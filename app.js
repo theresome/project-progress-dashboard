@@ -24,25 +24,101 @@ const seed = {
 };
 
 const blankData=()=>({logs:[],issues:[],progress:Object.fromEntries(defaultModules.map(m=>[m.id,0])),modules:structuredClone(defaultModules)});
+const blankWorkspace=()=>{
+  const id=`project-${Date.now()}`;
+  return {activeProjectId:id,projects:[{id,name:"我的第一个项目",category:"通用项目",description:"从这里开始整理项目周期内的进展、问题与工作记录。",startDate:new Date().toISOString().slice(0,10),endDate:"",status:"active",data:blankData()}]};
+};
 const legacyData=JSON.parse(localStorage.getItem("project-progress-data") || "null");
-let workspace=JSON.parse(localStorage.getItem("project-workspace-data-v1") || "null");
+let workspace=JSON.parse(localStorage.getItem("project-guest-workspace-v1") || localStorage.getItem("project-workspace-data-v1") || "null");
 if(!workspace){
   const firstId=`project-${Date.now()}`;
   workspace={activeProjectId:firstId,projects:[{id:firstId,name:"我的第一个项目",category:"通用项目",description:"从这里开始整理项目周期内的进展、问题与工作记录。",startDate:"2026-06-01",endDate:"",status:"active",data:legacyData||structuredClone(seed)}]};
 }
 workspace.projects.forEach(project=>{project.category=project.category||"未分类";project.data.modules=project.data.modules||structuredClone(defaultModules);project.data.logs=project.data.logs.map((log,index)=>({...log,id:log.id||`log-${log.date}-${index}`}))});
-localStorage.setItem("project-workspace-data-v1",JSON.stringify(workspace));
+localStorage.setItem("project-guest-workspace-v1",JSON.stringify(workspace));
 let activeProject=workspace.projects.find(project=>project.id===workspace.activeProjectId)||workspace.projects[0];
 let data=activeProject.data;
 modules=data.modules;
 const $=s=>document.querySelector(s), $$=s=>[...document.querySelectorAll(s)];
 const mod=id=>modules.find(m=>m.id===id) || modules[0];
-const save=()=>localStorage.setItem("project-workspace-data-v1",JSON.stringify(workspace));
 const fmt=d=>new Intl.DateTimeFormat("zh-CN",{month:"long",day:"numeric",weekday:"short"}).format(new Date(d));
 const statusName={open:"待解决",watch:"观察中",solved:"已解决"};
 const priorityName={high:"高优先",medium:"中优先",low:"低优先"};
 const projectStatusName={planning:"规划中",active:"进行中",paused:"已暂停",completed:"已完成"};
 let projectCategoryFilter="all";
+let supabaseClient=null;
+let currentUser=null;
+let syncTimer=null;
+
+function setSyncState(text,type=""){
+  $("#syncState").textContent=text;
+  $("#syncState").className=`sync-state ${type}`;
+}
+
+async function pushWorkspace(){
+  if(!supabaseClient||!currentUser)return;
+  setSyncState("正在同步...");
+  const {error}=await supabaseClient.from("user_workspaces").upsert({user_id:currentUser.id,workspace,updated_at:new Date().toISOString()});
+  setSyncState(error?"同步失败":"已云端同步",error?"error":"online");
+  if(error)console.error(error);
+}
+
+function scheduleCloudSave(){
+  if(!currentUser)return;
+  clearTimeout(syncTimer);
+  syncTimer=setTimeout(pushWorkspace,700);
+}
+
+const save=()=>{
+  const key=currentUser?`project-user-workspace-v1:${currentUser.id}`:"project-guest-workspace-v1";
+  localStorage.setItem(key,JSON.stringify(workspace));
+  scheduleCloudSave();
+};
+
+function updateAccountUI(){
+  $("#accountBtn").textContent=currentUser?currentUser.email:"登录并云端同步";
+  if(currentUser)$("#accountEmail").textContent=currentUser.email;
+}
+
+async function loadCloudWorkspace(){
+  const {data:cloud,error}=await supabaseClient.from("user_workspaces").select("workspace").eq("user_id",currentUser.id).maybeSingle();
+  if(error){setSyncState("读取云端失败","error");return}
+  if(cloud?.workspace?.projects?.length){
+    workspace=cloud.workspace;
+    workspace.projects.forEach(project=>{project.category=project.category||"未分类";project.data.modules=project.data.modules||structuredClone(defaultModules);project.data.logs=project.data.logs.map((log,index)=>({...log,id:log.id||`log-${log.date}-${index}`}))});
+    localStorage.setItem(`project-user-workspace-v1:${currentUser.id}`,JSON.stringify(workspace));
+    render();
+    setSyncState("已读取云端数据","online");
+  }else{
+    const userCache=JSON.parse(localStorage.getItem(`project-user-workspace-v1:${currentUser.id}`)||"null");
+    const migrationOwner=localStorage.getItem("project-cloud-migration-owner");
+    if(userCache)workspace=userCache;
+    else if(!migrationOwner)localStorage.setItem("project-cloud-migration-owner",currentUser.id);
+    else workspace=blankWorkspace();
+    render();
+    await pushWorkspace();
+  }
+}
+
+async function initSupabase(){
+  const config=window.SUPABASE_CONFIG||{};
+  if(!config.url||!config.publishableKey||!window.supabase){setSyncState("本地保存");return}
+  supabaseClient=window.supabase.createClient(config.url,config.publishableKey);
+  const {data:{session}}=await supabaseClient.auth.getSession();
+  currentUser=session?.user||null;
+  updateAccountUI();
+  if(currentUser)await loadCloudWorkspace();
+  supabaseClient.auth.onAuthStateChange(async(event,session)=>{
+    currentUser=session?.user||null;
+    updateAccountUI();
+    if(event==="SIGNED_IN")setTimeout(loadCloudWorkspace,0);
+    if(event==="SIGNED_OUT"){
+      workspace=JSON.parse(localStorage.getItem("project-guest-workspace-v1")||"null")||blankWorkspace();
+      render();
+      setSyncState("本地保存");
+    }
+  });
+}
 
 function render(){
   activeProject=workspace.projects.find(project=>project.id===workspace.activeProjectId)||workspace.projects[0];
@@ -196,7 +272,8 @@ $("#projectCategoryFilter").onchange=e=>{projectCategoryFilter=e.target.value;re
 $("#openProject").onclick=()=>openProjectEditor();
 const closeDialog=dialog=>{
   dialog.close();
-  dialog.querySelector("form").reset();
+  const form=dialog.querySelector("form");
+  if(form)form.reset();
   const focusLabel=dialog.querySelector(".range-label span");
   if(focusLabel)focusLabel.textContent="4 / 5";
 };
@@ -217,9 +294,35 @@ $("#logForm").onsubmit=e=>{e.preventDefault();const f=new FormData(e.target);dat
 $("#issueForm").onsubmit=e=>{e.preventDefault();const f=new FormData(e.target);data.issues.unshift({id:Date.now(),title:f.get("title"),detail:f.get("detail"),module:f.get("module"),priority:f.get("priority"),status:"open"});save();render();closeDialog($("#issueDialog"));toast("问题已加入追踪")};
 $("#projectForm").onsubmit=e=>{e.preventDefault();const f=new FormData(e.target);const projectId=f.get("projectId");if(projectId){const project=workspace.projects.find(item=>item.id===projectId);Object.assign(project,{name:f.get("name"),category:f.get("category")||"未分类",description:f.get("description"),startDate:f.get("startDate"),endDate:f.get("endDate"),status:f.get("status")});save();render();closeDialog($("#projectDialog"));toast("项目内容已更新");return}const id=`project-${Date.now()}`;workspace.projects.unshift({id,name:f.get("name"),category:f.get("category")||"未分类",description:f.get("description"),startDate:f.get("startDate"),endDate:f.get("endDate"),status:f.get("status"),data:blankData()});workspace.activeProjectId=id;projectCategoryFilter="all";save();render();closeDialog($("#projectDialog"));showView("dashboard");toast("新项目已创建并切换")};
 $("#moduleForm").onsubmit=e=>{e.preventDefault();const f=new FormData(e.target);const module=mod(f.get("moduleId"));module.name=f.get("name");module.desc=f.get("description");data.progress[module.id]=Math.max(0,Math.min(100,Number(f.get("progress"))));save();render();closeDialog($("#moduleDialog"));toast("进度模块已更新")};
+$("#accountBtn").onclick=()=>{
+  $("#authMessage").textContent="";
+  (currentUser?$("#accountDialog"):$("#authDialog")).showModal();
+};
+$("#authForm").onsubmit=async e=>{
+  e.preventDefault();
+  if(!supabaseClient){$("#authMessage").textContent="请先配置 supabase-config.js";return}
+  const f=new FormData(e.target);
+  $("#authMessage").textContent="正在登录...";
+  const {error}=await supabaseClient.auth.signInWithPassword({email:f.get("email"),password:f.get("password")});
+  if(error){$("#authMessage").textContent=error.message;return}
+  closeDialog($("#authDialog"));toast("登录成功，正在同步数据");
+};
+$("#signUpBtn").onclick=async()=>{
+  if(!supabaseClient){$("#authMessage").textContent="请先配置 supabase-config.js";return}
+  const form=$("#authForm");
+  if(!form.reportValidity())return;
+  const f=new FormData(form);
+  $("#authMessage").textContent="正在注册...";
+  const {data:result,error}=await supabaseClient.auth.signUp({email:f.get("email"),password:f.get("password"),options:{emailRedirectTo:location.href.split("#")[0]}});
+  if(error){$("#authMessage").textContent=error.message;return}
+  $("#authMessage").textContent=result.session?"注册成功，正在同步数据":"注册成功，请前往邮箱确认后再登录。";
+};
+$("#syncNowBtn").onclick=async()=>{await pushWorkspace();toast("同步完成")};
+$("#signOutBtn").onclick=async()=>{await supabaseClient.auth.signOut();closeDialog($("#accountDialog"));toast("已退出登录，本地数据仍保留")};
 $("#issueFilters").onclick=e=>{if(!e.target.dataset.filter)return;issueFilter=e.target.dataset.filter;$$(".chip").forEach(c=>c.classList.toggle("active",c===e.target));renderIssues()};
 $("#exportBtn").onclick=()=>{
   const lines=[`# ${activeProject.name} · 项目进展周报`,``,`项目周期：${activeProject.startDate}${activeProject.endDate?` 至 ${activeProject.endDate}`:""}`,`整体进度：${Math.round(Object.values(data.progress).reduce((a,b)=>a+b,0)/modules.length)}%`,``,`## 本周完成`,...data.logs.map(l=>`- ${l.done}（${mod(l.module).name}，${l.hours}h）`),``,`## 待解决问题`,...data.issues.filter(i=>i.status!=="solved").map(i=>`- [${priorityName[i.priority]}] ${i.title}`),``,`## 下一步`,...data.logs.slice(0,3).map(l=>`- ${l.next}`)];
   const blob=new Blob([lines.join("\n")],{type:"text/markdown;charset=utf-8"});const a=document.createElement("a");a.href=URL.createObjectURL(blob);a.download=`${activeProject.name}-项目进展周报.md`;a.click();URL.revokeObjectURL(a.href);toast("周报已导出");
 };
 render();
+initSupabase();
