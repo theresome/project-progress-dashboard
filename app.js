@@ -22,15 +22,31 @@ const seed = {
   progress:Object.fromEntries(modules.map(m=>[m.id,m.progress]))
 };
 
-let data = JSON.parse(localStorage.getItem("project-progress-data") || "null") || structuredClone(seed);
+const blankData=()=>({logs:[],issues:[],progress:Object.fromEntries(modules.map(m=>[m.id,0]))});
+const legacyData=JSON.parse(localStorage.getItem("project-progress-data") || "null");
+let workspace=JSON.parse(localStorage.getItem("project-workspace-data-v1") || "null");
+if(!workspace){
+  const firstId=`project-${Date.now()}`;
+  workspace={activeProjectId:firstId,projects:[{id:firstId,name:"我的第一个项目",category:"通用项目",description:"从这里开始整理项目周期内的进展、问题与工作记录。",startDate:"2026-06-01",endDate:"",status:"active",data:legacyData||structuredClone(seed)}]};
+}
+workspace.projects.forEach(project=>{project.category=project.category||"未分类";project.data.logs=project.data.logs.map((log,index)=>({...log,id:log.id||`log-${log.date}-${index}`}))});
+localStorage.setItem("project-workspace-data-v1",JSON.stringify(workspace));
+let activeProject=workspace.projects.find(project=>project.id===workspace.activeProjectId)||workspace.projects[0];
+let data=activeProject.data;
 const $=s=>document.querySelector(s), $$=s=>[...document.querySelectorAll(s)];
 const mod=id=>modules.find(m=>m.id===id) || modules[0];
-const save=()=>localStorage.setItem("project-progress-data",JSON.stringify(data));
+const save=()=>localStorage.setItem("project-workspace-data-v1",JSON.stringify(workspace));
 const fmt=d=>new Intl.DateTimeFormat("zh-CN",{month:"long",day:"numeric",weekday:"short"}).format(new Date(d));
 const statusName={open:"待解决",watch:"观察中",solved:"已解决"};
 const priorityName={high:"高优先",medium:"中优先",low:"低优先"};
+const projectStatusName={planning:"规划中",active:"进行中",paused:"已暂停",completed:"已完成"};
+let projectCategoryFilter="all";
 
 function render(){
+  activeProject=workspace.projects.find(project=>project.id===workspace.activeProjectId)||workspace.projects[0];
+  data=activeProject.data;
+  $("#activeProjectName").textContent=activeProject.name;
+  $("#activeProjectMeta").textContent=`${projectStatusName[activeProject.status]} · ${activeProject.startDate}${activeProject.endDate?` 至 ${activeProject.endDate}`:""}`;
   const totalHours=data.logs.reduce((a,b)=>a+Number(b.hours),0);
   const avgProgress=Math.round(Object.values(data.progress).reduce((a,b)=>a+b,0)/modules.length);
   const open=data.issues.filter(i=>i.status!=="solved").length;
@@ -53,13 +69,43 @@ function render(){
   $("#focusList").innerHTML=focusItems.map((x,i)=>`<div class="focus-item"><span class="number">0${i+1}</span><div><strong>${x[0]}</strong><small>${x[1]}</small></div></div>`).join("");
   $("#recentLogs").innerHTML=data.logs.slice(0,3).map(l=>`<div class="recent-item"><span class="number">${new Date(l.date).getDate()}</span><div><strong>${l.done}</strong><small>${mod(l.module).name} · ${l.hours} 小时</small></div></div>`).join("");
   $("#issueRadar").innerHTML=data.issues.filter(i=>i.status!=="solved").slice(0,4).map(i=>`<div class="radar-item"><span class="dot ${i.priority}"></span><div><strong>${i.title}</strong><small>${mod(i.module).name} · ${statusName[i.status]}</small></div></div>`).join("");
-  renderDaily(); renderProject(); renderIssues(); renderInsights();
+  renderProjects();renderDaily();renderProject();renderIssues();renderInsights();
+}
+
+function renderProjects(){
+  const categories=[...new Set(workspace.projects.map(project=>project.category))];
+  $("#projectCategoryFilter").innerHTML=`<option value="all">全部分类</option>${categories.map(category=>`<option value="${category}" ${projectCategoryFilter===category?"selected":""}>${category}</option>`).join("")}`;
+  const visibleProjects=workspace.projects.filter(project=>projectCategoryFilter==="all"||project.category===projectCategoryFilter);
+  $("#projectList").innerHTML=visibleProjects.map(project=>{
+    const projectData=project.data;
+    const progress=Math.round(Object.values(projectData.progress).reduce((a,b)=>a+b,0)/modules.length);
+    const hours=projectData.logs.reduce((a,b)=>a+Number(b.hours),0);
+    const open=projectData.issues.filter(issue=>issue.status!=="solved").length;
+    return `<article class="project-list-card ${project.id===workspace.activeProjectId?"active":""}"><div class="entry-head"><span class="status-pill ${project.status}">${projectStatusName[project.status]}</span>${project.id===workspace.activeProjectId?'<span class="tag">当前项目</span>':""}</div><h3>${project.name}</h3><span class="tag">${project.category}</span><p>${project.description||"暂无项目说明"}</p><div class="project-period">${project.startDate||"未设置开始日期"}${project.endDate?` 至 ${project.endDate}`:" · 长期项目"}</div><div class="project-stats"><div><strong>${progress}%</strong><span>整体进度</span></div><div><strong>${hours}h</strong><span>工作投入</span></div><div><strong>${open}</strong><span>待解决</span></div></div><select class="project-status-select" data-id="${project.id}">${Object.entries(projectStatusName).map(([key,value])=>`<option value="${key}" ${project.status===key?"selected":""}>${value}</option>`).join("")}</select><div class="project-list-actions"><button class="ghost switch-project" data-id="${project.id}" ${project.id===workspace.activeProjectId?"disabled":""}>${project.id===workspace.activeProjectId?"查看中":"切换项目"}</button><button class="delete-btn delete-project" data-id="${project.id}">删除</button></div></article>`;
+  }).join("")||`<article class="card"><p>该分类下暂无项目。</p></article>`;
+  $$(".project-status-select").forEach(select=>select.onchange=()=>{workspace.projects.find(project=>project.id===select.dataset.id).status=select.value;save();render();toast("项目状态已更新")});
+  $$(".switch-project").forEach(button=>button.onclick=()=>{
+    workspace.activeProjectId=button.dataset.id;save();render();showView("dashboard");toast("已切换项目");
+  });
+  $$(".delete-project").forEach(button=>button.onclick=()=>{
+    if(workspace.projects.length===1){toast("至少需要保留一个项目");return}
+    const project=workspace.projects.find(item=>item.id===button.dataset.id);
+    if(!confirm(`确定删除项目“${project.name}”吗？项目内全部记录和问题都会删除。`))return;
+    workspace.projects=workspace.projects.filter(item=>item.id!==button.dataset.id);
+    if(workspace.activeProjectId===button.dataset.id)workspace.activeProjectId=workspace.projects[0].id;
+    save();render();toast("项目已删除");
+  });
 }
 
 function progressRow(m){const p=data.progress[m.id];return `<div class="progress-row"><span>${m.name}</span><div class="bar"><i style="width:${p}%;background:${m.color}"></i></div><b>${p}%</b></div>`}
 
 function renderDaily(){
-  $("#dailyTimeline").innerHTML=data.logs.map(l=>`<article class="day-card"><div class="day-date"><strong>${fmt(l.date).split("星期")[0]}</strong><span>${fmt(l.date).includes("星期")?"星期"+fmt(l.date).split("星期")[1]:"工作记录"}</span></div><div class="day-main"><div class="day-meta"><span class="tag">${mod(l.module).name}</span><span class="tag">${l.hours} 小时</span><span class="tag">专注 ${l.focus}/5</span></div><h3>${l.done}</h3><div class="reflection"><div><b>遇到的问题</b>${l.problem||"今日暂无明显阻塞"}</div><div><b>下一步行动</b>${l.next}</div></div></div></article>`).join("");
+  $("#dailyTimeline").innerHTML=data.logs.map(l=>`<article class="day-card"><div class="day-date"><strong>${fmt(l.date).split("星期")[0]}</strong><span>${fmt(l.date).includes("星期")?"星期"+fmt(l.date).split("星期")[1]:"工作记录"}</span></div><div class="day-main"><div class="entry-head"><div class="day-meta"><span class="tag">${mod(l.module).name}</span><span class="tag">${l.hours} 小时</span><span class="tag">专注 ${l.focus}/5</span></div><button class="delete-btn delete-log" data-id="${l.id}" title="删除这条记录">删除</button></div><h3>${l.done}</h3><div class="reflection"><div><b>遇到的问题</b>${l.problem||"今日暂无明显阻塞"}</div><div><b>下一步行动</b>${l.next}</div></div></div></article>`).join("") || `<article class="card"><p>还没有每日记录，点击“新建记录”开始复盘。</p></article>`;
+  $$(".delete-log").forEach(button=>button.onclick=()=>{
+    if(!confirm("确定删除这条每日记录吗？删除后无法恢复。"))return;
+    data.logs=data.logs.filter(log=>String(log.id)!==button.dataset.id);
+    save();render();toast("每日记录已删除");
+  });
 }
 
 function renderProject(){
@@ -70,8 +116,13 @@ function renderProject(){
 let issueFilter="all";
 function renderIssues(){
   const items=data.issues.filter(i=>issueFilter==="all"||i.status===issueFilter);
-  $("#issueBoard").innerHTML=items.map(i=>`<article class="issue-card" style="--accent:${i.priority==="high"?"#dc6b62":i.priority==="medium"?"#f0a85b":"#6a9fb5"}"><span class="tag">${priorityName[i.priority]} · ${mod(i.module).name}</span><h3>${i.title}</h3><p>${i.detail}</p><div class="issue-foot"><span class="kicker">${statusName[i.status]}</span><select class="status-select" data-id="${i.id}">${Object.entries(statusName).map(([k,v])=>`<option value="${k}" ${i.status===k?"selected":""}>${v}</option>`).join("")}</select></div></article>`).join("") || `<article class="card"><p>这个分类暂时没有问题。</p></article>`;
+  $("#issueBoard").innerHTML=items.map(i=>`<article class="issue-card" style="--accent:${i.priority==="high"?"#dc6b62":i.priority==="medium"?"#f0a85b":"#6a9fb5"}"><div class="entry-head"><span class="tag">${priorityName[i.priority]} · ${mod(i.module).name}</span><button class="delete-btn delete-issue" data-id="${i.id}" title="删除这个问题">删除</button></div><h3>${i.title}</h3><p>${i.detail}</p><div class="issue-foot"><span class="kicker">${statusName[i.status]}</span><select class="status-select" data-id="${i.id}">${Object.entries(statusName).map(([k,v])=>`<option value="${k}" ${i.status===k?"selected":""}>${v}</option>`).join("")}</select></div></article>`).join("") || `<article class="card"><p>这个分类暂时没有问题。</p></article>`;
   $$(".status-select").forEach(s=>s.onchange=()=>{data.issues.find(i=>i.id==s.dataset.id).status=s.value;save();render();toast("问题状态已更新")});
+  $$(".delete-issue").forEach(button=>button.onclick=()=>{
+    if(!confirm("确定删除这个问题吗？删除后无法恢复。"))return;
+    data.issues=data.issues.filter(issue=>String(issue.id)!==button.dataset.id);
+    save();render();toast("问题已删除");
+  });
 }
 
 function renderInsights(){
@@ -95,7 +146,7 @@ function toast(msg){const t=$("#toast");t.textContent=msg;t.classList.add("show"
 function showView(id){
   $$(".view").forEach(v=>v.classList.toggle("active",v.id===id));
   $$(".nav-item").forEach(n=>n.classList.toggle("active",n.dataset.view===id));
-  $("#pageTitle").textContent={dashboard:"项目总览",daily:"每日记录",project:"项目进度",issues:"问题中心",insights:"效率分析"}[id];
+  $("#pageTitle").textContent={projects:"项目列表",dashboard:"项目总览",daily:"每日记录",project:"项目进度",issues:"问题中心",insights:"效率分析"}[id];
 }
 
 $("#todayLabel").textContent=new Intl.DateTimeFormat("zh-CN",{year:"numeric",month:"long",day:"numeric",weekday:"long"}).format(new Date());
@@ -105,12 +156,36 @@ $("#nav").onclick=e=>e.target.dataset.view&&showView(e.target.dataset.view);
 $$("[data-view-jump]").forEach(b=>b.onclick=()=>showView(b.dataset.viewJump));
 $$("[data-open-log]").forEach(b=>b.onclick=()=>$("#logDialog").showModal());
 $("#openIssue").onclick=()=>$("#issueDialog").showModal();
+$("#projectCategoryFilter").onchange=e=>{projectCategoryFilter=e.target.value;renderProjects()};
+$("#openProject").onclick=()=>{
+  $("#projectForm [name=startDate]").value=new Date().toISOString().slice(0,10);
+  $("#projectDialog").showModal();
+};
+const closeDialog=dialog=>{
+  dialog.close();
+  dialog.querySelector("form").reset();
+  const focusLabel=dialog.querySelector(".range-label span");
+  if(focusLabel)focusLabel.textContent="4 / 5";
+};
+$$("[data-close-dialog]").forEach(button=>button.onclick=()=>closeDialog(button.closest("dialog")));
+$$("dialog").forEach(dialog=>{
+  dialog.addEventListener("click",event=>{
+    const box=dialog.getBoundingClientRect();
+    const outside=event.clientX<box.left||event.clientX>box.right||event.clientY<box.top||event.clientY>box.bottom;
+    if(outside)closeDialog(dialog);
+  });
+  dialog.addEventListener("cancel",event=>{
+    event.preventDefault();
+    closeDialog(dialog);
+  });
+});
 $("#logForm input[type=range]").oninput=e=>e.target.nextElementSibling.textContent=`${e.target.value} / 5`;
-$("#logForm").onsubmit=e=>{if(e.submitter.value==="cancel")return;e.preventDefault();const f=new FormData(e.target);data.logs.unshift({date:new Date().toISOString().slice(0,10),done:f.get("done"),module:f.get("module"),hours:Number(f.get("hours")),problem:f.get("problem"),next:f.get("next"),focus:Number(f.get("focus"))});save();render();e.target.reset();$("#logDialog").close();toast("今日工作记录已保存")};
-$("#issueForm").onsubmit=e=>{if(e.submitter.value==="cancel")return;e.preventDefault();const f=new FormData(e.target);data.issues.unshift({id:Date.now(),title:f.get("title"),detail:f.get("detail"),module:f.get("module"),priority:f.get("priority"),status:"open"});save();render();e.target.reset();$("#issueDialog").close();toast("问题已加入追踪")};
+$("#logForm").onsubmit=e=>{e.preventDefault();const f=new FormData(e.target);data.logs.unshift({id:`log-${Date.now()}`,date:new Date().toISOString().slice(0,10),done:f.get("done"),module:f.get("module"),hours:Number(f.get("hours")),problem:f.get("problem"),next:f.get("next"),focus:Number(f.get("focus"))});save();render();closeDialog($("#logDialog"));toast("今日工作记录已保存")};
+$("#issueForm").onsubmit=e=>{e.preventDefault();const f=new FormData(e.target);data.issues.unshift({id:Date.now(),title:f.get("title"),detail:f.get("detail"),module:f.get("module"),priority:f.get("priority"),status:"open"});save();render();closeDialog($("#issueDialog"));toast("问题已加入追踪")};
+$("#projectForm").onsubmit=e=>{e.preventDefault();const f=new FormData(e.target);const id=`project-${Date.now()}`;workspace.projects.unshift({id,name:f.get("name"),category:f.get("category")||"未分类",description:f.get("description"),startDate:f.get("startDate"),endDate:f.get("endDate"),status:f.get("status"),data:blankData()});workspace.activeProjectId=id;projectCategoryFilter="all";save();render();closeDialog($("#projectDialog"));showView("dashboard");toast("新项目已创建并切换")};
 $("#issueFilters").onclick=e=>{if(!e.target.dataset.filter)return;issueFilter=e.target.dataset.filter;$$(".chip").forEach(c=>c.classList.toggle("active",c===e.target));renderIssues()};
 $("#exportBtn").onclick=()=>{
-  const lines=[`# 项目进展周报`,``,`整体进度：${Math.round(Object.values(data.progress).reduce((a,b)=>a+b,0)/modules.length)}%`,``,`## 本周完成`,...data.logs.map(l=>`- ${l.done}（${mod(l.module).name}，${l.hours}h）`),``,`## 待解决问题`,...data.issues.filter(i=>i.status!=="solved").map(i=>`- [${priorityName[i.priority]}] ${i.title}`),``,`## 下一步`,...data.logs.slice(0,3).map(l=>`- ${l.next}`)];
-  const blob=new Blob([lines.join("\n")],{type:"text/markdown;charset=utf-8"});const a=document.createElement("a");a.href=URL.createObjectURL(blob);a.download="项目进展周报.md";a.click();URL.revokeObjectURL(a.href);toast("周报已导出");
+  const lines=[`# ${activeProject.name} · 项目进展周报`,``,`项目周期：${activeProject.startDate}${activeProject.endDate?` 至 ${activeProject.endDate}`:""}`,`整体进度：${Math.round(Object.values(data.progress).reduce((a,b)=>a+b,0)/modules.length)}%`,``,`## 本周完成`,...data.logs.map(l=>`- ${l.done}（${mod(l.module).name}，${l.hours}h）`),``,`## 待解决问题`,...data.issues.filter(i=>i.status!=="solved").map(i=>`- [${priorityName[i.priority]}] ${i.title}`),``,`## 下一步`,...data.logs.slice(0,3).map(l=>`- ${l.next}`)];
+  const blob=new Blob([lines.join("\n")],{type:"text/markdown;charset=utf-8"});const a=document.createElement("a");a.href=URL.createObjectURL(blob);a.download=`${activeProject.name}-项目进展周报.md`;a.click();URL.revokeObjectURL(a.href);toast("周报已导出");
 };
 render();
