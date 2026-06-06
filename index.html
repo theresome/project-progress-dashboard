@@ -13,6 +13,7 @@
       <div><strong>项目进展台</strong><span>进度与汇报工作台</span></div>
     </div>
     <nav id="nav">
+      <button class="nav-item" data-view="projects">项目列表</button>
       <button class="nav-item active" data-view="dashboard">总览</button>
       <button class="nav-item" data-view="daily">每日记录</button>
       <button class="nav-item" data-view="project">项目进度</button>
@@ -20,8 +21,8 @@
       <button class="nav-item" data-view="insights">效率分析</button>
     </nav>
     <div class="side-foot">
-      <span>当前项目</span>
-      <small>执行推进 · 进行中</small>
+      <span id="activeProjectName">当前项目</span>
+      <small id="activeProjectMeta">执行推进 · 进行中</small>
     </div>
   </aside>
 
@@ -36,6 +37,11 @@
         <button class="primary" data-open-log>+ 记录今日</button>
       </div>
     </header>
+
+    <section class="view" id="projects">
+      <div class="section-intro"><div><span class="kicker">项目工作区</span><h2>项目列表</h2><p>按项目周期分类整理工作内容，切换后查看独立的进展与分析。</p></div><div class="header-actions"><select class="list-filter" id="projectCategoryFilter"><option value="all">全部分类</option></select><button class="primary" id="openProject">+ 新建项目</button></div></div>
+      <div class="project-list-grid" id="projectList"></div>
+    </section>
 
     <section class="view active" id="dashboard">
       <div class="hero">
@@ -111,7 +117,7 @@
 
   <dialog id="logDialog">
     <form method="dialog" id="logForm">
-      <div class="dialog-head"><div><span class="kicker">今日复盘</span><h2>记录项目进展</h2></div><button class="close" value="cancel">×</button></div>
+      <div class="dialog-head"><div><span class="kicker">今日复盘</span><h2>记录项目进展</h2></div><button class="close" type="button" data-close-dialog aria-label="关闭">×</button></div>
       <label>今天完成了什么？<textarea name="done" required placeholder="例如：完成核心方案初稿，并与相关成员确认下一步"></textarea></label>
       <div class="form-grid">
         <label>所属模块<select name="module" id="moduleSelect"></select></label>
@@ -126,7 +132,7 @@
 
   <dialog id="issueDialog">
     <form method="dialog" id="issueForm">
-      <div class="dialog-head"><div><span class="kicker">问题闭环</span><h2>添加项目问题</h2></div><button class="close" value="cancel">×</button></div>
+      <div class="dialog-head"><div><span class="kicker">问题闭环</span><h2>添加项目问题</h2></div><button class="close" type="button" data-close-dialog aria-label="关闭">×</button></div>
       <label>问题标题<input name="title" required placeholder="一句话描述问题"></label>
       <label>问题详情<textarea name="detail" required placeholder="说明当前现象、影响和已尝试方法"></textarea></label>
       <div class="form-grid">
@@ -134,6 +140,21 @@
         <label>优先级<select name="priority"><option value="high">高</option><option value="medium" selected>中</option><option value="low">低</option></select></label>
       </div>
       <button class="primary wide" value="default">加入问题中心</button>
+    </form>
+  </dialog>
+
+  <dialog id="projectDialog">
+    <form method="dialog" id="projectForm">
+      <div class="dialog-head"><div><span class="kicker">项目管理</span><h2>新建项目</h2></div><button class="close" type="button" data-close-dialog aria-label="关闭">×</button></div>
+      <label>项目名称<input name="name" required placeholder="例如：品牌升级项目"></label>
+      <label>项目说明<textarea name="description" placeholder="简要说明项目目标和范围"></textarea></label>
+      <label>项目分类<input name="category" placeholder="例如：课程研发、品牌设计、运营活动"></label>
+      <div class="form-grid">
+        <label>开始日期<input name="startDate" type="date" required></label>
+        <label>结束日期<input name="endDate" type="date"></label>
+      </div>
+      <label>项目状态<select name="status"><option value="planning">规划中</option><option value="active" selected>进行中</option><option value="paused">已暂停</option><option value="completed">已完成</option></select></label>
+      <button class="primary wide" value="default">创建项目</button>
     </form>
   </dialog>
 
