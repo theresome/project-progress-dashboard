@@ -55,12 +55,34 @@ function setSyncState(text,type=""){
   $("#syncState").className=`sync-state ${type}`;
 }
 
+function describeSyncError(error){
+  if(!error)return "";
+  const raw=[error.message,error.details,error.hint,error.code].filter(Boolean).join(" · ");
+  if(error.code==="42P01"||raw.includes("user_workspaces"))return `云端数据表不可用：${raw}。请在 Supabase SQL Editor 执行 supabase-schema.sql。`;
+  if(error.code==="42501"||raw.toLowerCase().includes("row-level security"))return `数据库权限被拒绝：${raw}。请检查 user_workspaces 表的 RLS 策略。`;
+  if(raw.toLowerCase().includes("failed to fetch")||raw.toLowerCase().includes("network"))return `无法连接 Supabase：${raw}。请检查网络、Project URL 和 Publishable key。`;
+  return raw||"未知同步错误";
+}
+
+function showSyncError(error){
+  const message=describeSyncError(error);
+  $("#syncErrorDetail").textContent=message;
+  $("#syncErrorDetail").classList.toggle("show",Boolean(message));
+  if(message)console.error(error);
+  return message;
+}
+
 async function pushWorkspace(){
   if(!supabaseClient||!currentUser)return;
   setSyncState("正在同步...");
-  const {error}=await supabaseClient.from("user_workspaces").upsert({user_id:currentUser.id,workspace,updated_at:new Date().toISOString()});
-  setSyncState(error?"同步失败":"已云端同步",error?"error":"online");
-  if(error)console.error(error);
+  try{
+    const {error}=await supabaseClient.from("user_workspaces").upsert({user_id:currentUser.id,workspace,updated_at:new Date().toISOString()});
+    setSyncState(error?"同步失败":"已云端同步",error?"error":"online");
+    showSyncError(error);
+    return !error;
+  }catch(error){
+    setSyncState("同步失败","error");showSyncError(error);return false;
+  }
 }
 
 function scheduleCloudSave(){
@@ -81,8 +103,13 @@ function updateAccountUI(){
 }
 
 async function loadCloudWorkspace(){
-  const {data:cloud,error}=await supabaseClient.from("user_workspaces").select("workspace").eq("user_id",currentUser.id).maybeSingle();
-  if(error){setSyncState("读取云端失败","error");return}
+  let cloud,error;
+  try{
+    const result=await supabaseClient.from("user_workspaces").select("workspace").eq("user_id",currentUser.id).maybeSingle();
+    cloud=result.data;error=result.error;
+  }catch(caught){error=caught}
+  if(error){setSyncState("读取云端失败","error");showSyncError(error);return}
+  showSyncError(null);
   if(cloud?.workspace?.projects?.length){
     workspace=cloud.workspace;
     workspace.projects.forEach(project=>{project.category=project.category||"未分类";project.data.modules=project.data.modules||structuredClone(defaultModules);project.data.logs=project.data.logs.map((log,index)=>({...log,id:log.id||`log-${log.date}-${index}`}))});
@@ -103,8 +130,10 @@ async function loadCloudWorkspace(){
 async function initSupabase(){
   const config=window.SUPABASE_CONFIG||{};
   if(!config.url||!config.publishableKey||!window.supabase){setSyncState("本地保存");return}
+  try{new URL(config.url)}catch{setSyncState("Supabase 地址无效","error");showSyncError({message:"supabase-config.js 中的 Project URL 无效"});return}
   supabaseClient=window.supabase.createClient(config.url,config.publishableKey);
-  const {data:{session}}=await supabaseClient.auth.getSession();
+  const {data:{session},error}=await supabaseClient.auth.getSession();
+  if(error){setSyncState("登录状态读取失败","error");showSyncError(error)}
   currentUser=session?.user||null;
   updateAccountUI();
   if(currentUser)await loadCloudWorkspace();
@@ -296,6 +325,7 @@ $("#projectForm").onsubmit=e=>{e.preventDefault();const f=new FormData(e.target)
 $("#moduleForm").onsubmit=e=>{e.preventDefault();const f=new FormData(e.target);const module=mod(f.get("moduleId"));module.name=f.get("name");module.desc=f.get("description");data.progress[module.id]=Math.max(0,Math.min(100,Number(f.get("progress"))));save();render();closeDialog($("#moduleDialog"));toast("进度模块已更新")};
 $("#accountBtn").onclick=()=>{
   $("#authMessage").textContent="";
+  if(currentUser&&$("#syncState").classList.contains("error"))$("#syncErrorDetail").classList.add("show");
   (currentUser?$("#accountDialog"):$("#authDialog")).showModal();
 };
 $("#authForm").onsubmit=async e=>{
@@ -318,7 +348,7 @@ $("#signUpBtn").onclick=async()=>{
   if(error){$("#authMessage").textContent=error.message;return}
   $("#authMessage").textContent=result.session?"注册成功，正在同步数据":"注册成功，请前往邮箱确认后再登录。";
 };
-$("#syncNowBtn").onclick=async()=>{await pushWorkspace();toast("同步完成")};
+$("#syncNowBtn").onclick=async()=>{const ok=await pushWorkspace();toast(ok?"同步完成":"同步失败，请查看错误详情")};
 $("#signOutBtn").onclick=async()=>{await supabaseClient.auth.signOut();closeDialog($("#accountDialog"));toast("已退出登录，本地数据仍保留")};
 $("#issueFilters").onclick=e=>{if(!e.target.dataset.filter)return;issueFilter=e.target.dataset.filter;$$(".chip").forEach(c=>c.classList.toggle("active",c===e.target));renderIssues()};
 $("#exportBtn").onclick=()=>{
