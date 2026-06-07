@@ -467,6 +467,23 @@ $("#profileForm").onsubmit=async e=>{
 };
 $("#profileSyncBtn").onclick=async()=>{const ok=await pushWorkspace();toast(ok?"同步完成":"同步失败")};
 $("#profileSignOutBtn").onclick=async()=>supabaseClient.auth.signOut();
+$$(".download-link").forEach(link=>link.onclick=async event=>{
+  event.preventDefault();
+  const releasePage="https://github.com/theresome/project-progress-dashboard/releases/latest";
+  toast("正在获取最新版 Windows 安装包...");
+  try{
+    const response=await fetch("https://api.github.com/repos/theresome/project-progress-dashboard/releases/latest",{headers:{Accept:"application/vnd.github+json"}});
+    if(!response.ok)throw new Error(`GitHub 返回 ${response.status}`);
+    const release=await response.json();
+    const setup=release.assets?.find(asset=>/setup.*\.exe$/i.test(asset.name))
+      ||release.assets?.find(asset=>/\.exe$/i.test(asset.name)&&!/portable/i.test(asset.name));
+    if(!setup)throw new Error("最新版中没有找到安装版文件");
+    location.href=setup.browser_download_url;
+  }catch(error){
+    toast(`暂时无法直接下载：${error.message}`);
+    location.href=releasePage;
+  }
+});
 $("#syncNowBtn").onclick=async()=>{const ok=await pushWorkspace();toast(ok?"同步完成":"同步失败，请查看错误详情")};
 $("#signOutBtn").onclick=async()=>{await supabaseClient.auth.signOut();closeDialog($("#accountDialog"));toast("已退出登录")};
 $("#issueFilters").onclick=e=>{if(!e.target.dataset.filter)return;issueFilter=e.target.dataset.filter;$$(".chip").forEach(c=>c.classList.toggle("active",c===e.target));renderIssues()};
