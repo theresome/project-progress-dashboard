@@ -47,26 +47,13 @@ jobs:
           path: release/*.exe
           if-no-files-found: error
 
-      - name: Remove existing release files
+      - name: Publish release files
         env:
           GH_TOKEN: ${{ github.token }}
         shell: pwsh
         run: |
-          $assets = @(
-            "项目进展台-Windows-Setup.exe",
-            "项目进展台-Windows-Portable.exe"
-          )
-          foreach ($asset in $assets) {
-            gh release delete-asset "$env:RELEASE_TAG" $asset --yes 2>$null
-            if ($LASTEXITCODE -ne 0) {
-              Write-Host "No existing asset to replace: $asset"
-            }
+          gh release view "$env:RELEASE_TAG" 2>$null
+          if ($LASTEXITCODE -ne 0) {
+            gh release create "$env:RELEASE_TAG" --title "项目进展台 $env:RELEASE_TAG" --generate-notes
           }
-          exit 0
-
-      - name: Publish release files
-        uses: softprops/action-gh-release@v2
-        with:
-          tag_name: ${{ env.RELEASE_TAG }}
-          files: release/*.exe
-          generate_release_notes: true
+          gh release upload "$env:RELEASE_TAG" release/*.exe --clobber
