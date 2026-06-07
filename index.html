@@ -9,6 +9,19 @@
   <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
 </head>
 <body>
+  <section class="auth-gate" id="authGate">
+    <div class="auth-gate-brand"><div class="brand-mark">文</div><div><strong>项目进展台</strong><span>登录后管理并同步你的项目数据</span></div></div>
+    <form class="auth-gate-card" id="gateAuthForm">
+      <span class="kicker">账户登录</span>
+      <h1>欢迎回来</h1>
+      <p>网页版、手机端和 Windows 客户端使用同一个账户同步数据。</p>
+      <label>邮箱<input name="email" type="email" autocomplete="email" required placeholder="name@example.com"></label>
+      <label>密码<input name="password" type="password" autocomplete="current-password" minlength="6" required placeholder="至少 6 位密码"></label>
+      <button class="primary wide" type="submit">登录并读取数据</button>
+      <button class="ghost wide" type="button" id="gateSignUpBtn">注册新账户</button>
+      <div class="gate-message" id="gateMessage">正在检查登录状态...</div>
+    </form>
+  </section>
   <aside class="sidebar">
     <div class="brand">
       <div class="brand-mark">文</div>
