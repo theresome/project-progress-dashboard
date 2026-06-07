@@ -7,8 +7,8 @@
   "license": "MIT",
   "scripts": {
     "desktop": "electron .",
-    "build:win": "node scripts/check-signing.js && electron-builder --win nsis portable",
-    "build:win:unsigned": "electron-builder --win nsis portable"
+    "build:win": "node scripts/check-signing.js && electron-builder --win nsis portable --publish never",
+    "build:win:unsigned": "electron-builder --win nsis portable --publish never"
   },
   "devDependencies": {
     "electron": "^37.2.0",
