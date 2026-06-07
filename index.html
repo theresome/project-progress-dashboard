@@ -35,6 +35,7 @@
       <button class="nav-item" data-view="project">项目进度</button>
       <button class="nav-item" data-view="issues">问题中心</button>
       <button class="nav-item" data-view="insights">效率分析</button>
+      <button class="nav-item" data-view="teams">小组协作</button>
       <button class="nav-item" data-view="mine">我的</button>
     </nav>
     <div class="side-foot">
@@ -134,6 +135,35 @@
       </div>
     </section>
 
+    <section class="view" id="teams">
+      <div class="section-intro">
+        <div><span class="kicker">多人协作</span><h2>项目小组</h2><p>通过邀请码或用户名邀请成员，共同更新项目并查看团队进展。</p></div>
+        <div class="header-actions"><button class="ghost" id="joinTeamBtn">输入邀请码</button><button class="primary" id="createTeamBtn">+ 创建小组</button></div>
+      </div>
+      <div class="team-toolbar card">
+        <label>当前工作空间<select id="workspaceScope"><option value="personal">我的个人项目</option></select></label>
+        <div id="teamScopeHint">个人项目仅自己可见。</div>
+      </div>
+      <div class="team-grid">
+        <article class="card">
+          <div class="card-head"><div><span class="kicker">我的小组</span><h3>已加入的小组</h3></div></div>
+          <div id="teamList"></div>
+        </article>
+        <article class="card">
+          <div class="card-head"><div><span class="kicker">待处理</span><h3>小组邀请</h3></div></div>
+          <div id="teamInvitations"></div>
+        </article>
+      </div>
+      <article class="card team-detail-card">
+        <div class="card-head"><div><span class="kicker">监督视图</span><h3 id="teamDetailTitle">选择一个小组查看详情</h3></div><div class="header-actions" id="teamManageActions"><button class="ghost" id="copyInviteCodeBtn">复制邀请码</button><button class="primary" id="inviteUserBtn">邀请用户</button></div></div>
+        <div class="team-summary" id="teamSummary"></div>
+        <div class="team-detail-grid">
+          <div><h4>成员</h4><div id="teamMembers"></div></div>
+          <div><h4>最近工作动态</h4><div id="teamActivity"></div></div>
+        </div>
+      </article>
+    </section>
+
     <section class="view" id="mine">
       <div class="section-intro"><div><span class="kicker">个人中心</span><h2>我的</h2><p>管理个人资料、云端数据与客户端。</p></div></div>
       <div class="profile-layout">
@@ -150,6 +180,7 @@
             <div class="profile-stats" id="profileStats"></div>
           </article>
           <article class="card settings-list">
+            <button data-view-jump="teams"><span><b>我的项目小组</b><small>加入小组并查看成员协作进展</small></span><i>›</i></button>
             <button id="profileSyncBtn"><span><b>立即同步云端</b><small>将当前更改保存至你的账户</small></span><i>›</i></button>
             <a class="download-link" href="https://github.com/theresome/project-progress-dashboard/releases/latest"><span><b>下载 Windows 客户端</b><small>在电脑桌面使用项目进展台</small></span><i>›</i></a>
             <button id="profileSignOutBtn" class="danger-setting"><span><b>退出登录</b><small>退出后需要重新登录才能使用</small></span><i>›</i></button>
@@ -249,6 +280,36 @@
       <p class="form-note">用户名不可与其他用户重复，可使用中文、字母、数字和下划线。</p>
       <button class="primary wide" value="default">保存个人资料</button>
       <p class="auth-message" id="profileMessage"></p>
+    </form>
+  </dialog>
+
+  <dialog id="createTeamDialog">
+    <form method="dialog" id="createTeamForm">
+      <div class="dialog-head"><div><span class="kicker">新建协作空间</span><h2>创建项目小组</h2></div><button class="close" type="button" data-close-dialog aria-label="关闭">×</button></div>
+      <label>小组名称<input name="name" required minlength="2" maxlength="40" placeholder="例如：课程研发小组"></label>
+      <label>小组说明<textarea name="description" placeholder="简单说明小组负责的项目与目标"></textarea></label>
+      <button class="primary wide" value="default">创建小组</button>
+      <p class="auth-message" id="createTeamMessage"></p>
+    </form>
+  </dialog>
+
+  <dialog id="joinTeamDialog">
+    <form method="dialog" id="joinTeamForm">
+      <div class="dialog-head"><div><span class="kicker">加入小组</span><h2>输入邀请码</h2></div><button class="close" type="button" data-close-dialog aria-label="关闭">×</button></div>
+      <label>小组邀请码<input name="code" required maxlength="12" placeholder="例如：8F3K2PAB"></label>
+      <p class="form-note">使用邀请码加入后，你将作为普通成员参与共享项目。</p>
+      <button class="primary wide" value="default">加入小组</button>
+      <p class="auth-message" id="joinTeamMessage"></p>
+    </form>
+  </dialog>
+
+  <dialog id="inviteUserDialog">
+    <form method="dialog" id="inviteUserForm">
+      <div class="dialog-head"><div><span class="kicker">指定邀请</span><h2>邀请用户加入小组</h2></div><button class="close" type="button" data-close-dialog aria-label="关闭">×</button></div>
+      <label>用户的唯一用户名<input name="username" required placeholder="输入对方用户名"></label>
+      <label>加入后的角色<select name="role"><option value="member">普通成员：可以更新共享项目</option><option value="viewer">监督查看：只能查看全部进展</option></select></label>
+      <button class="primary wide" value="default">发送邀请</button>
+      <p class="auth-message" id="inviteUserMessage"></p>
     </form>
   </dialog>
 

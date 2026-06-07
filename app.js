@@ -36,6 +36,7 @@ if(!workspace){
 }
 workspace.projects.forEach(project=>{project.category=project.category||"未分类";project.data.modules=project.data.modules||structuredClone(defaultModules);project.data.logs=project.data.logs.map((log,index)=>({...log,id:log.id||`log-${log.date}-${index}`}))});
 localStorage.setItem("project-guest-workspace-v1",JSON.stringify(workspace));
+let personalWorkspace=workspace;
 let activeProject=workspace.projects.find(project=>project.id===workspace.activeProjectId)||workspace.projects[0];
 let data=activeProject.data;
 modules=data.modules;
@@ -52,6 +53,16 @@ let currentProfile=null;
 let syncTimer=null;
 let gateAuthMode="signin";
 let dialogAuthMode="signin";
+let teams=[];
+let teamInvitations=[];
+let currentTeam=null;
+let currentMembership=null;
+let teamMembers=[];
+const teamRoleName={owner:"所有者",manager:"管理者",member:"普通成员",viewer:"监督查看"};
+
+function canEditWorkspace(){
+  return !currentTeam||["owner","manager","member"].includes(currentMembership?.role);
+}
 
 function setGateMessage(message,error=false){
   $("#gateMessage").textContent=message;
@@ -92,9 +103,12 @@ function showSyncError(error){
 
 async function pushWorkspace(){
   if(!supabaseClient||!currentUser)return;
+  if(!canEditWorkspace()){toast("当前为监督查看模式，不能修改共享项目");return false}
   setSyncState("正在同步...");
   try{
-    const {error}=await supabaseClient.from("user_workspaces").upsert({user_id:currentUser.id,workspace,updated_at:new Date().toISOString()},{onConflict:"user_id"});
+    const {error}=currentTeam
+      ?await supabaseClient.from("team_workspaces").update({workspace,updated_by:currentUser.id,updated_at:new Date().toISOString()}).eq("team_id",currentTeam.id)
+      :await supabaseClient.from("user_workspaces").upsert({user_id:currentUser.id,workspace,updated_at:new Date().toISOString()},{onConflict:"user_id"});
     setSyncState(error?"同步失败":"已云端同步",error?"error":"online");
     showSyncError(error);
     return !error;
@@ -110,9 +124,12 @@ function scheduleCloudSave(){
 }
 
 const save=()=>{
-  const key=currentUser?`project-user-workspace-v1:${currentUser.id}`:"project-guest-workspace-v1";
+  if(!canEditWorkspace()){toast("当前为监督查看模式，不能修改共享项目");return false}
+  const key=currentTeam?`project-team-workspace-v1:${currentTeam.id}`:currentUser?`project-user-workspace-v1:${currentUser.id}`:"project-guest-workspace-v1";
   localStorage.setItem(key,JSON.stringify(workspace));
+  if(!currentTeam)personalWorkspace=workspace;
   scheduleCloudSave();
+  return true;
 };
 
 function updateAccountUI(){
@@ -136,6 +153,52 @@ async function loadProfile(){
   return true;
 }
 
+async function loadTeams(){
+  if(!currentUser)return;
+  const membershipsResult=await supabaseClient.from("team_members").select("team_id,role,teams(id,name,description,invite_code,owner_id,created_at)").eq("user_id",currentUser.id);
+  if(membershipsResult.error){showSyncError(membershipsResult.error);return false}
+  teams=(membershipsResult.data||[]).map(item=>({...item.teams,role:item.role})).filter(Boolean);
+  const invitationsResult=await supabaseClient.from("team_invitations").select("id,team_id,role,status,teams(name)").eq("invited_user_id",currentUser.id).eq("status","pending");
+  teamInvitations=invitationsResult.data||[];
+  renderTeams();
+  return true;
+}
+
+async function loadTeamMembers(){
+  if(!currentTeam){teamMembers=[];renderTeams();return}
+  const result=await supabaseClient.from("team_members").select("user_id,role,joined_at").eq("team_id",currentTeam.id);
+  if(result.error){showSyncError(result.error);return}
+  const ids=(result.data||[]).map(member=>member.user_id);
+  let profiles=[];
+  if(ids.length){
+    const profileResult=await supabaseClient.from("user_profiles").select("user_id,username").in("user_id",ids);
+    profiles=profileResult.data||[];
+  }
+  teamMembers=(result.data||[]).map(member=>({...member,username:profiles.find(profile=>profile.user_id===member.user_id)?.username||"未设置用户名"}));
+  renderTeams();
+}
+
+async function switchWorkspace(scope){
+  if(scope==="personal"){
+    currentTeam=null;currentMembership=null;workspace=personalWorkspace;
+    localStorage.setItem(`project-user-workspace-v1:${currentUser.id}`,JSON.stringify(workspace));
+    render();renderTeams();setSyncState("个人云端数据","online");toast("已切换到个人项目");return;
+  }
+  const team=teams.find(item=>item.id===scope);
+  if(!team)return;
+  setSyncState("正在读取小组数据...");
+  const result=await supabaseClient.from("team_workspaces").select("workspace").eq("team_id",team.id).single();
+  if(result.error){showSyncError(result.error);setSyncState("读取小组失败","error");return}
+  currentTeam=team;currentMembership={role:team.role};
+  const hasProjects=Boolean(result.data?.workspace?.projects?.length);
+  workspace=hasProjects?result.data.workspace:blankWorkspace();
+  workspace.projects.forEach(project=>{project.category=project.category||"未分类";project.data.modules=project.data.modules||structuredClone(defaultModules);project.data.logs=project.data.logs.map((log,index)=>({...log,id:log.id||`log-${log.date}-${index}`}))});
+  localStorage.setItem(`project-team-workspace-v1:${team.id}`,JSON.stringify(workspace));
+  await loadTeamMembers();
+  render();renderTeams();setSyncState(`小组同步 · ${team.name}`,"online");toast(`已进入小组：${team.name}`);
+  if(!hasProjects&&canEditWorkspace())await pushWorkspace();
+}
+
 function renderMine(){
   if(!currentUser)return;
   updateAccountUI();
@@ -151,6 +214,45 @@ function renderMine(){
   $("#profileSyncStatus").textContent=$("#syncState").textContent;
 }
 
+function renderTeams(){
+  const scope=$("#workspaceScope");
+  if(!scope)return;
+  scope.innerHTML=`<option value="personal">我的个人项目</option>${teams.map(team=>`<option value="${team.id}" ${currentTeam?.id===team.id?"selected":""}>${team.name} · ${teamRoleName[team.role]}</option>`).join("")}`;
+  $("#teamScopeHint").textContent=currentTeam
+    ?`当前正在编辑“${currentTeam.name}”的共享项目。你的角色：${teamRoleName[currentMembership?.role]||"成员"}。`
+    :"个人项目仅自己可见，切换到小组后可共同编辑共享项目。";
+  $("#teamList").innerHTML=teams.map(team=>`<div class="team-list-item"><div><strong>${team.name}</strong><small>${team.description||"暂无小组说明"} · ${teamRoleName[team.role]}</small></div><div class="compact-actions"><button class="ghost enter-team" data-id="${team.id}">${currentTeam?.id===team.id?"查看中":"进入"}</button></div></div>`).join("")||'<p class="empty-note">还没有加入小组，可以创建小组或输入邀请码加入。</p>';
+  $("#teamInvitations").innerHTML=teamInvitations.map(invitation=>`<div class="invitation-item"><div><strong>${invitation.teams?.name||"项目小组"}</strong><small>邀请你以“${teamRoleName[invitation.role]}”身份加入</small></div><div class="compact-actions"><button class="primary respond-invite" data-id="${invitation.id}" data-accept="true">接受</button><button class="ghost respond-invite" data-id="${invitation.id}" data-accept="false">拒绝</button></div></div>`).join("")||'<p class="empty-note">暂无待处理邀请。</p>';
+  $("#teamDetailTitle").textContent=currentTeam?currentTeam.name:"选择一个小组查看详情";
+  $("#teamManageActions").style.display=currentTeam&&["owner","manager"].includes(currentMembership?.role)?"flex":"none";
+  if(!currentTeam){
+    $("#teamSummary").innerHTML="";
+    $("#teamMembers").innerHTML='<p class="empty-note">进入小组后显示成员。</p>';
+    $("#teamActivity").innerHTML='<p class="empty-note">进入小组后显示共享项目动态。</p>';
+  }else{
+    const projects=workspace.projects||[];
+    const logs=projects.flatMap(project=>project.data.logs.map(log=>({...log,projectName:project.name})));
+    const issues=projects.flatMap(project=>project.data.issues);
+    const hours=logs.reduce((sum,log)=>sum+Number(log.hours),0);
+    $("#teamSummary").innerHTML=[
+      [teamMembers.length,"小组成员"],
+      [projects.length,"共享项目"],
+      [`${hours}h`,"累计投入"],
+      [issues.filter(issue=>issue.status!=="solved").length,"待解决问题"]
+    ].map(item=>`<div><strong>${item[0]}</strong><span>${item[1]}</span></div>`).join("");
+    $("#teamMembers").innerHTML=teamMembers.map(member=>`<div class="member-item"><div><strong>${member.username}</strong><small>${member.user_id===currentUser?.id?"当前用户 · ":""}加入于 ${new Date(member.joined_at).toLocaleDateString("zh-CN")}</small></div><span class="role-badge ${member.role}">${teamRoleName[member.role]}</span></div>`).join("")||'<p class="empty-note">暂无成员信息。</p>';
+    $("#teamActivity").innerHTML=logs.sort((a,b)=>b.date.localeCompare(a.date)).slice(0,8).map(log=>`<div class="activity-item"><div><strong>${log.done}</strong><small>${log.authorName||"小组成员"} · ${log.projectName} · ${log.date} · ${log.hours}h</small></div></div>`).join("")||'<p class="empty-note">小组还没有工作记录。</p>';
+  }
+  $$(".enter-team").forEach(button=>button.onclick=()=>switchWorkspace(button.dataset.id));
+  $$(".respond-invite").forEach(button=>button.onclick=()=>respondToInvitation(button.dataset.id,button.dataset.accept==="true"));
+}
+
+function applyWorkspacePermissions(){
+  const readOnly=currentTeam&&!canEditWorkspace();
+  const selectors=["[data-open-log]","#openIssue","#openProject",".edit-project",".delete-project",".project-status-select",".edit-module",".progress-select",".delete-log",".delete-issue",".status-select"];
+  selectors.forEach(selector=>$$(selector).forEach(control=>control.disabled=readOnly));
+}
+
 async function loadCloudWorkspace(){
   let cloud,error;
   try{
@@ -161,6 +263,7 @@ async function loadCloudWorkspace(){
   showSyncError(null);
   if(cloud?.workspace?.projects?.length){
     workspace=cloud.workspace;
+    personalWorkspace=workspace;
     workspace.projects.forEach(project=>{project.category=project.category||"未分类";project.data.modules=project.data.modules||structuredClone(defaultModules);project.data.logs=project.data.logs.map((log,index)=>({...log,id:log.id||`log-${log.date}-${index}`}))});
     localStorage.setItem(`project-user-workspace-v1:${currentUser.id}`,JSON.stringify(workspace));
     render();
@@ -169,6 +272,7 @@ async function loadCloudWorkspace(){
     unlockApp();
   }else{
     workspace=blankWorkspace();
+    personalWorkspace=workspace;
     render();
     renderMine();
     const saved=await pushWorkspace();
@@ -188,14 +292,15 @@ async function initSupabase(){
   if(error){setSyncState("登录状态读取失败","error");setGateMessage(describeSyncError(error),true)}
   currentUser=session?.user||null;
   updateAccountUI();
-  if(currentUser){await loadProfile();await loadCloudWorkspace()}
+  if(currentUser){await loadProfile();await loadCloudWorkspace();await loadTeams()}
   else lockApp("请登录或注册后使用项目进展台。");
   supabaseClient.auth.onAuthStateChange(async(event,session)=>{
     currentUser=session?.user||null;
     updateAccountUI();
-    if(event==="SIGNED_IN"){setGateMessage("登录成功，正在读取云端数据...");setTimeout(async()=>{await loadProfile();await loadCloudWorkspace()},0)}
+    if(event==="SIGNED_IN"){setGateMessage("登录成功，正在读取云端数据...");setTimeout(async()=>{await loadProfile();await loadCloudWorkspace();await loadTeams()},0)}
     if(event==="SIGNED_OUT"){
       currentProfile=null;
+      teams=[];teamInvitations=[];currentTeam=null;currentMembership=null;teamMembers=[];
       workspace=blankWorkspace();
       setSyncState("请登录");
       lockApp("已退出登录，请重新登录后使用。");
@@ -232,7 +337,7 @@ function render(){
   $("#focusList").innerHTML=focusItems.map((x,i)=>`<div class="focus-item"><span class="number">0${i+1}</span><div><strong>${x[0]}</strong><small>${x[1]}</small></div></div>`).join("");
   $("#recentLogs").innerHTML=data.logs.slice(0,3).map(l=>`<div class="recent-item"><span class="number">${new Date(l.date).getDate()}</span><div><strong>${l.done}</strong><small>${mod(l.module).name} · ${l.hours} 小时</small></div></div>`).join("");
   $("#issueRadar").innerHTML=data.issues.filter(i=>i.status!=="solved").slice(0,4).map(i=>`<div class="radar-item"><span class="dot ${i.priority}"></span><div><strong>${i.title}</strong><small>${mod(i.module).name} · ${statusName[i.status]}</small></div></div>`).join("");
-  renderProjects();renderDaily();renderProject();renderIssues();renderInsights();renderMine();
+  renderProjects();renderDaily();renderProject();renderIssues();renderInsights();renderMine();renderTeams();applyWorkspacePermissions();
 }
 
 function renderProjects(){
@@ -311,7 +416,7 @@ function toast(msg){const t=$("#toast");t.textContent=msg;t.classList.add("show"
 function showView(id){
   $$(".view").forEach(v=>v.classList.toggle("active",v.id===id));
   $$(".nav-item").forEach(n=>n.classList.toggle("active",n.dataset.view===id));
-  $("#pageTitle").textContent={projects:"项目列表",dashboard:"项目总览",daily:"每日记录",project:"项目进度",issues:"问题中心",insights:"效率分析",mine:"我的"}[id];
+  $("#pageTitle").textContent={projects:"项目列表",dashboard:"项目总览",daily:"每日记录",project:"项目进度",issues:"问题中心",insights:"效率分析",teams:"小组协作",mine:"我的"}[id];
 }
 
 function refreshModuleOptions(){
@@ -353,6 +458,15 @@ $$("[data-open-log]").forEach(b=>b.onclick=()=>{$("#logForm [name=date]").value=
 $("#openIssue").onclick=()=>$("#issueDialog").showModal();
 $("#projectCategoryFilter").onchange=e=>{projectCategoryFilter=e.target.value;renderProjects()};
 $("#openProject").onclick=()=>openProjectEditor();
+$("#workspaceScope").onchange=e=>switchWorkspace(e.target.value);
+$("#createTeamBtn").onclick=()=>{$("#createTeamMessage").textContent="";$("#createTeamDialog").showModal()};
+$("#joinTeamBtn").onclick=()=>{$("#joinTeamMessage").textContent="";$("#joinTeamDialog").showModal()};
+$("#inviteUserBtn").onclick=()=>{$("#inviteUserMessage").textContent="";$("#inviteUserDialog").showModal()};
+$("#copyInviteCodeBtn").onclick=async()=>{
+  if(!currentTeam)return;
+  try{await navigator.clipboard.writeText(currentTeam.invite_code);toast(`邀请码已复制：${currentTeam.invite_code}`)}
+  catch{toast(`小组邀请码：${currentTeam.invite_code}`)}
+};
 const closeDialog=dialog=>{
   dialog.close();
   const form=dialog.querySelector("form");
@@ -373,8 +487,8 @@ $$("dialog").forEach(dialog=>{
   });
 });
 $("#logForm input[type=range]").oninput=e=>e.target.nextElementSibling.textContent=`${e.target.value} / 5`;
-$("#logForm").onsubmit=e=>{e.preventDefault();const f=new FormData(e.target);data.logs.unshift({id:`log-${Date.now()}`,date:f.get("date"),done:f.get("done"),module:f.get("module"),hours:Number(f.get("hours")),problem:f.get("problem"),next:f.get("next"),focus:Number(f.get("focus"))});data.logs.sort((a,b)=>b.date.localeCompare(a.date));save();render();closeDialog($("#logDialog"));toast("工作记录已保存")};
-$("#issueForm").onsubmit=e=>{e.preventDefault();const f=new FormData(e.target);data.issues.unshift({id:Date.now(),title:f.get("title"),detail:f.get("detail"),module:f.get("module"),priority:f.get("priority"),status:"open"});save();render();closeDialog($("#issueDialog"));toast("问题已加入追踪")};
+$("#logForm").onsubmit=e=>{e.preventDefault();const f=new FormData(e.target);data.logs.unshift({id:`log-${Date.now()}`,date:f.get("date"),done:f.get("done"),module:f.get("module"),hours:Number(f.get("hours")),problem:f.get("problem"),next:f.get("next"),focus:Number(f.get("focus")),authorId:currentUser?.id,authorName:currentProfile?.username||currentUser?.email||"成员"});data.logs.sort((a,b)=>b.date.localeCompare(a.date));save();render();closeDialog($("#logDialog"));toast("工作记录已保存")};
+$("#issueForm").onsubmit=e=>{e.preventDefault();const f=new FormData(e.target);data.issues.unshift({id:Date.now(),title:f.get("title"),detail:f.get("detail"),module:f.get("module"),priority:f.get("priority"),status:"open",authorId:currentUser?.id,authorName:currentProfile?.username||currentUser?.email||"成员"});save();render();closeDialog($("#issueDialog"));toast("问题已加入追踪")};
 $("#projectForm").onsubmit=e=>{e.preventDefault();const f=new FormData(e.target);const projectId=f.get("projectId");if(projectId){const project=workspace.projects.find(item=>item.id===projectId);Object.assign(project,{name:f.get("name"),category:f.get("category")||"未分类",description:f.get("description"),startDate:f.get("startDate"),endDate:f.get("endDate"),status:f.get("status")});save();render();closeDialog($("#projectDialog"));toast("项目内容已更新");return}const id=`project-${Date.now()}`;workspace.projects.unshift({id,name:f.get("name"),category:f.get("category")||"未分类",description:f.get("description"),startDate:f.get("startDate"),endDate:f.get("endDate"),status:f.get("status"),data:blankData()});workspace.activeProjectId=id;projectCategoryFilter="all";save();render();closeDialog($("#projectDialog"));showView("dashboard");toast("新项目已创建并切换")};
 $("#moduleForm").onsubmit=e=>{e.preventDefault();const f=new FormData(e.target);const module=mod(f.get("moduleId"));module.name=f.get("name");module.desc=f.get("description");data.progress[module.id]=Math.max(0,Math.min(100,Number(f.get("progress"))));save();render();closeDialog($("#moduleDialog"));toast("进度模块已更新")};
 $("#accountBtn").onclick=()=>{
@@ -406,6 +520,37 @@ async function signUp(username,email,password){
   }
   setGateMessage(result.session?"注册成功，正在创建云端数据...":"注册成功，请前往邮箱完成验证后再登录。");
   return true;
+}
+
+async function createTeam(name,description){
+  const result=await supabaseClient.rpc("create_team",{team_name:name,team_description:description});
+  if(result.error)throw result.error;
+  await loadTeams();
+  await switchWorkspace(result.data);
+  return result.data;
+}
+
+async function joinTeamByCode(code){
+  const result=await supabaseClient.rpc("join_team_by_code",{code});
+  if(result.error)throw result.error;
+  await loadTeams();
+  await switchWorkspace(result.data);
+  return result.data;
+}
+
+async function inviteUserToCurrentTeam(username,role){
+  if(!currentTeam)throw new Error("请先进入一个小组");
+  const result=await supabaseClient.rpc("invite_user_to_team",{target_team_id:currentTeam.id,target_username:username,member_role:role});
+  if(result.error)throw result.error;
+  return result.data;
+}
+
+async function respondToInvitation(id,accept){
+  const result=await supabaseClient.rpc("respond_to_team_invitation",{invitation_id:id,accept_invitation:accept});
+  if(result.error){toast(result.error.message);return}
+  await loadTeams();
+  if(accept)await switchWorkspace(result.data);
+  toast(accept?"已加入小组":"已拒绝邀请");
 }
 
 function setAuthMode(target,mode){
@@ -464,6 +609,33 @@ $("#profileForm").onsubmit=async e=>{
   const {error}=await supabaseClient.from("user_profiles").upsert({user_id:currentUser.id,username,updated_at:new Date().toISOString()},{onConflict:"user_id"});
   if(error){$("#profileMessage").textContent=error.code==="23505"?"该用户名已被使用，请换一个。":error.message;return}
   currentProfile={username};updateAccountUI();renderMine();closeDialog($("#profileDialog"));toast("个人资料已更新");
+};
+$("#createTeamForm").onsubmit=async e=>{
+  e.preventDefault();
+  const f=new FormData(e.target);
+  $("#createTeamMessage").textContent="正在创建小组...";
+  try{
+    await createTeam(f.get("name"),f.get("description"));
+    closeDialog($("#createTeamDialog"));showView("teams");toast("小组已创建");
+  }catch(error){$("#createTeamMessage").textContent=error.message}
+};
+$("#joinTeamForm").onsubmit=async e=>{
+  e.preventDefault();
+  const code=new FormData(e.target).get("code");
+  $("#joinTeamMessage").textContent="正在加入小组...";
+  try{
+    await joinTeamByCode(code);
+    closeDialog($("#joinTeamDialog"));showView("teams");toast("已加入小组");
+  }catch(error){$("#joinTeamMessage").textContent=error.message}
+};
+$("#inviteUserForm").onsubmit=async e=>{
+  e.preventDefault();
+  const f=new FormData(e.target);
+  $("#inviteUserMessage").textContent="正在发送邀请...";
+  try{
+    await inviteUserToCurrentTeam(f.get("username"),f.get("role"));
+    closeDialog($("#inviteUserDialog"));toast("邀请已发送");
+  }catch(error){$("#inviteUserMessage").textContent=error.message}
 };
 $("#profileSyncBtn").onclick=async()=>{const ok=await pushWorkspace();toast(ok?"同步完成":"同步失败")};
 $("#profileSignOutBtn").onclick=async()=>supabaseClient.auth.signOut();
