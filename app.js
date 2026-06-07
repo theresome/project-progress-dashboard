@@ -48,7 +48,10 @@ const projectStatusName={planning:"规划中",active:"进行中",paused:"已暂�
 let projectCategoryFilter="all";
 let supabaseClient=null;
 let currentUser=null;
+let currentProfile=null;
 let syncTimer=null;
+let gateAuthMode="signin";
+let dialogAuthMode="signin";
 
 function setGateMessage(message,error=false){
   $("#gateMessage").textContent=message;
@@ -113,8 +116,39 @@ const save=()=>{
 };
 
 function updateAccountUI(){
-  $("#accountBtn").textContent=currentUser?currentUser.email:"登录并云端同步";
-  if(currentUser)$("#accountEmail").textContent=currentUser.email;
+  const displayName=currentProfile?.username||currentUser?.email||"用户";
+  $("#accountBtn").textContent=currentUser?displayName:"登录并云端同步";
+  if(currentUser){
+    $("#accountUsername").textContent=displayName;
+    $("#accountEmail").textContent=currentUser.email;
+    $("#profileUsername").textContent=displayName;
+    $("#profileEmail").textContent=currentUser.email;
+    $("#profileAvatar").textContent=displayName.slice(0,1).toUpperCase();
+  }
+}
+
+async function loadProfile(){
+  if(!currentUser)return;
+  const {data:profile,error}=await supabaseClient.from("user_profiles").select("username").eq("user_id",currentUser.id).maybeSingle();
+  if(error){showSyncError(error);return false}
+  currentProfile=profile;
+  updateAccountUI();
+  return true;
+}
+
+function renderMine(){
+  if(!currentUser)return;
+  updateAccountUI();
+  const allLogs=workspace.projects.flatMap(project=>project.data.logs);
+  const allIssues=workspace.projects.flatMap(project=>project.data.issues);
+  const totalHours=allLogs.reduce((sum,log)=>sum+Number(log.hours),0);
+  $("#profileStats").innerHTML=[
+    [workspace.projects.length,"项目总数"],
+    [allLogs.length,"工作记录"],
+    [`${totalHours}h`,"累计投入"],
+    [allIssues.filter(issue=>issue.status!=="solved").length,"待解决问题"]
+  ].map(item=>`<div><strong>${item[0]}</strong><span>${item[1]}</span></div>`).join("");
+  $("#profileSyncStatus").textContent=$("#syncState").textContent;
 }
 
 async function loadCloudWorkspace(){
@@ -130,11 +164,13 @@ async function loadCloudWorkspace(){
     workspace.projects.forEach(project=>{project.category=project.category||"未分类";project.data.modules=project.data.modules||structuredClone(defaultModules);project.data.logs=project.data.logs.map((log,index)=>({...log,id:log.id||`log-${log.date}-${index}`}))});
     localStorage.setItem(`project-user-workspace-v1:${currentUser.id}`,JSON.stringify(workspace));
     render();
+    renderMine();
     setSyncState("已读取云端数据","online");
     unlockApp();
   }else{
     workspace=blankWorkspace();
     render();
+    renderMine();
     const saved=await pushWorkspace();
     if(!saved){lockApp("首次创建云端数据失败，请检查数据库配置。");return false}
     unlockApp();
@@ -152,13 +188,14 @@ async function initSupabase(){
   if(error){setSyncState("登录状态读取失败","error");setGateMessage(describeSyncError(error),true)}
   currentUser=session?.user||null;
   updateAccountUI();
-  if(currentUser)await loadCloudWorkspace();
+  if(currentUser){await loadProfile();await loadCloudWorkspace()}
   else lockApp("请登录或注册后使用项目进展台。");
   supabaseClient.auth.onAuthStateChange(async(event,session)=>{
     currentUser=session?.user||null;
     updateAccountUI();
-    if(event==="SIGNED_IN"){setGateMessage("登录成功，正在读取云端数据...");setTimeout(loadCloudWorkspace,0)}
+    if(event==="SIGNED_IN"){setGateMessage("登录成功，正在读取云端数据...");setTimeout(async()=>{await loadProfile();await loadCloudWorkspace()},0)}
     if(event==="SIGNED_OUT"){
+      currentProfile=null;
       workspace=blankWorkspace();
       setSyncState("请登录");
       lockApp("已退出登录，请重新登录后使用。");
@@ -195,7 +232,7 @@ function render(){
   $("#focusList").innerHTML=focusItems.map((x,i)=>`<div class="focus-item"><span class="number">0${i+1}</span><div><strong>${x[0]}</strong><small>${x[1]}</small></div></div>`).join("");
   $("#recentLogs").innerHTML=data.logs.slice(0,3).map(l=>`<div class="recent-item"><span class="number">${new Date(l.date).getDate()}</span><div><strong>${l.done}</strong><small>${mod(l.module).name} · ${l.hours} 小时</small></div></div>`).join("");
   $("#issueRadar").innerHTML=data.issues.filter(i=>i.status!=="solved").slice(0,4).map(i=>`<div class="radar-item"><span class="dot ${i.priority}"></span><div><strong>${i.title}</strong><small>${mod(i.module).name} · ${statusName[i.status]}</small></div></div>`).join("");
-  renderProjects();renderDaily();renderProject();renderIssues();renderInsights();
+  renderProjects();renderDaily();renderProject();renderIssues();renderInsights();renderMine();
 }
 
 function renderProjects(){
@@ -274,7 +311,7 @@ function toast(msg){const t=$("#toast");t.textContent=msg;t.classList.add("show"
 function showView(id){
   $$(".view").forEach(v=>v.classList.toggle("active",v.id===id));
   $$(".nav-item").forEach(n=>n.classList.toggle("active",n.dataset.view===id));
-  $("#pageTitle").textContent={projects:"项目列表",dashboard:"项目总览",daily:"每日记录",project:"项目进度",issues:"问题中心",insights:"效率分析"}[id];
+  $("#pageTitle").textContent={projects:"项目列表",dashboard:"项目总览",daily:"每日记录",project:"项目进度",issues:"问题中心",insights:"效率分析",mine:"我的"}[id];
 }
 
 function refreshModuleOptions(){
@@ -345,15 +382,6 @@ $("#accountBtn").onclick=()=>{
   if(currentUser&&$("#syncState").classList.contains("error"))$("#syncErrorDetail").classList.add("show");
   (currentUser?$("#accountDialog"):$("#authDialog")).showModal();
 };
-$("#authForm").onsubmit=async e=>{
-  e.preventDefault();
-  if(!supabaseClient){$("#authMessage").textContent="请先配置 supabase-config.js";return}
-  const f=new FormData(e.target);
-  $("#authMessage").textContent="正在登录...";
-  const ok=await signIn(f.get("email"),f.get("password"));
-  if(!ok){$("#authMessage").textContent=$("#gateMessage").textContent;return}
-  closeDialog($("#authDialog"));toast("登录成功，正在同步数据");
-};
 async function signIn(email,password){
   if(!supabaseClient){setGateMessage("Supabase 尚未配置，无法登录。",true);return false}
   setGateMessage("正在登录并读取云端数据...");
@@ -362,36 +390,83 @@ async function signIn(email,password){
   return true;
 }
 
-async function signUp(email,password){
+function validUsername(username){
+  return /^[A-Za-z0-9_一-龥]{3,24}$/.test(username);
+}
+
+async function signUp(username,email,password){
   if(!supabaseClient){setGateMessage("Supabase 尚未配置，无法注册。",true);return false}
+  if(!validUsername(username)){setGateMessage("用户名需为 3–24 位中文、字母、数字或下划线。",true);return false}
   setGateMessage("正在注册...");
   const redirectUrl=window.SUPABASE_CONFIG?.redirectUrl||location.href.split("#")[0];
-  const {data:result,error}=await supabaseClient.auth.signUp({email,password,options:{emailRedirectTo:redirectUrl}});
-  if(error){setGateMessage(error.message,true);return false}
+  const {data:result,error}=await supabaseClient.auth.signUp({email,password,options:{emailRedirectTo:redirectUrl,data:{username}}});
+  if(error){
+    const message=error.message.toLowerCase().includes("database error")?"用户名可能已被使用，请更换后重试。":error.message;
+    setGateMessage(message,true);return false
+  }
   setGateMessage(result.session?"注册成功，正在创建云端数据...":"注册成功，请前往邮箱完成验证后再登录。");
   return true;
+}
+
+function setAuthMode(target,mode){
+  const form=target==="gate"?$("#gateAuthForm"):$("#authForm");
+  const toggle=target==="gate"?$("#gateSignUpBtn"):$("#signUpBtn");
+  const usernameInput=form.elements.username;
+  form.classList.toggle("signup-mode",mode==="signup");
+  usernameInput.required=mode==="signup";
+  toggle.textContent=mode==="signup"?"返回登录":"切换到注册";
+  if(target==="gate"){
+    gateAuthMode=mode;
+    form.querySelector("button[type=submit]").textContent=mode==="signup"?"注册账户":"登录并读取数据";
+  }else{
+    dialogAuthMode=mode;
+    form.querySelector("button.primary").textContent=mode==="signup"?"注册账户":"登录";
+  }
 }
 
 $("#gateAuthForm").onsubmit=async e=>{
   e.preventDefault();
   const f=new FormData(e.target);
-  await signIn(f.get("email"),f.get("password"));
+  if(gateAuthMode==="signup")await signUp(f.get("username"),f.get("email"),f.get("password"));
+  else await signIn(f.get("email"),f.get("password"));
 };
-$("#gateSignUpBtn").onclick=async()=>{
-  const form=$("#gateAuthForm");
-  if(!form.reportValidity())return;
-  const f=new FormData(form);
-  await signUp(f.get("email"),f.get("password"));
-};
+$("#gateSignUpBtn").onclick=()=>setAuthMode("gate",gateAuthMode==="signup"?"signin":"signup");
 $("#signUpBtn").onclick=async()=>{
+  if(dialogAuthMode!=="signup"){setAuthMode("dialog","signup");return}
   if(!supabaseClient){$("#authMessage").textContent="请先配置 supabase-config.js";return}
   const form=$("#authForm");
   if(!form.reportValidity())return;
   const f=new FormData(form);
   $("#authMessage").textContent="正在注册...";
-  await signUp(f.get("email"),f.get("password"));
+  await signUp(f.get("username"),f.get("email"),f.get("password"));
   $("#authMessage").textContent=$("#gateMessage").textContent;
 };
+$("#authForm").onsubmit=async e=>{
+  e.preventDefault();
+  if(dialogAuthMode==="signup"){
+    const f=new FormData(e.target);
+    await signUp(f.get("username"),f.get("email"),f.get("password"));
+    $("#authMessage").textContent=$("#gateMessage").textContent;
+    return;
+  }
+  if(!supabaseClient){$("#authMessage").textContent="请先配置 supabase-config.js";return}
+  const f=new FormData(e.target);
+  $("#authMessage").textContent="正在登录...";
+  const ok=await signIn(f.get("email"),f.get("password"));
+  if(!ok){$("#authMessage").textContent=$("#gateMessage").textContent;return}
+  closeDialog($("#authDialog"));toast("登录成功，正在同步数据");
+};
+$("#editProfileBtn").onclick=()=>{$("#profileForm [name=username]").value=currentProfile?.username||"";$("#profileMessage").textContent="";$("#profileDialog").showModal()};
+$("#profileForm").onsubmit=async e=>{
+  e.preventDefault();
+  const username=new FormData(e.target).get("username").trim();
+  if(!validUsername(username)){$("#profileMessage").textContent="用户名需为 3–24 位中文、字母、数字或下划线。";return}
+  const {error}=await supabaseClient.from("user_profiles").upsert({user_id:currentUser.id,username,updated_at:new Date().toISOString()},{onConflict:"user_id"});
+  if(error){$("#profileMessage").textContent=error.code==="23505"?"该用户名已被使用，请换一个。":error.message;return}
+  currentProfile={username};updateAccountUI();renderMine();closeDialog($("#profileDialog"));toast("个人资料已更新");
+};
+$("#profileSyncBtn").onclick=async()=>{const ok=await pushWorkspace();toast(ok?"同步完成":"同步失败")};
+$("#profileSignOutBtn").onclick=async()=>supabaseClient.auth.signOut();
 $("#syncNowBtn").onclick=async()=>{const ok=await pushWorkspace();toast(ok?"同步完成":"同步失败，请查看错误详情")};
 $("#signOutBtn").onclick=async()=>{await supabaseClient.auth.signOut();closeDialog($("#accountDialog"));toast("已退出登录")};
 $("#issueFilters").onclick=e=>{if(!e.target.dataset.filter)return;issueFilter=e.target.dataset.filter;$$(".chip").forEach(c=>c.classList.toggle("active",c===e.target));renderIssues()};

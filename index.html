@@ -15,10 +15,11 @@
       <span class="kicker">账户登录</span>
       <h1>欢迎回来</h1>
       <p>网页版、手机端和 Windows 客户端使用同一个账户同步数据。</p>
+      <label class="signup-only">用户名<input name="username" autocomplete="username" placeholder="3–24 位字母、数字、中文或下划线"></label>
       <label>邮箱<input name="email" type="email" autocomplete="email" required placeholder="name@example.com"></label>
       <label>密码<input name="password" type="password" autocomplete="current-password" minlength="6" required placeholder="至少 6 位密码"></label>
       <button class="primary wide" type="submit">登录并读取数据</button>
-      <button class="ghost wide" type="button" id="gateSignUpBtn">注册新账户</button>
+      <button class="ghost wide" type="button" id="gateSignUpBtn">切换到注册</button>
       <div class="gate-message" id="gateMessage">正在检查登录状态...</div>
     </form>
   </section>
@@ -34,6 +35,7 @@
       <button class="nav-item" data-view="project">项目进度</button>
       <button class="nav-item" data-view="issues">问题中心</button>
       <button class="nav-item" data-view="insights">效率分析</button>
+      <button class="nav-item" data-view="mine">我的</button>
     </nav>
     <div class="side-foot">
       <span id="activeProjectName">当前项目</span>
@@ -50,7 +52,7 @@
       </div>
       <div class="header-actions">
         <span class="sync-state" id="syncState">本地保存</span>
-        <a class="ghost download-link" id="windowsDownload" href="https://github.com/theresome/project-progress-dashboard/releases/latest" target="_blank" rel="noopener">下载 Windows 版</a>
+        <a class="ghost download-link" id="windowsDownload" href="https://github.com/theresome/project-progress-dashboard/releases/latest/download/%E9%A1%B9%E7%9B%AE%E8%BF%9B%E5%B1%95%E5%8F%B0-Windows-Setup.exe">下载 Windows 版</a>
         <button class="ghost" id="exportBtn">导出周报</button>
         <button class="primary" data-open-log>+ 记录今日</button>
       </div>
@@ -131,6 +133,30 @@
         <article class="card"><div class="card-head"><div><span class="kicker">阻塞分析</span><h3>问题集中在哪里</h3></div></div><div id="blockers"></div></article>
       </div>
     </section>
+
+    <section class="view" id="mine">
+      <div class="section-intro"><div><span class="kicker">个人中心</span><h2>我的</h2><p>管理个人资料、云端数据与客户端。</p></div></div>
+      <div class="profile-layout">
+        <article class="card profile-card">
+          <div class="profile-avatar" id="profileAvatar">文</div>
+          <h2 id="profileUsername">用户</h2>
+          <p id="profileEmail"></p>
+          <span class="status-pill active" id="profileSyncStatus">云端已连接</span>
+          <button class="ghost wide" id="editProfileBtn">编辑个人资料</button>
+        </article>
+        <div class="profile-content">
+          <article class="card">
+            <div class="card-head"><div><span class="kicker">数据概览</span><h3>我的工作数据</h3></div></div>
+            <div class="profile-stats" id="profileStats"></div>
+          </article>
+          <article class="card settings-list">
+            <button id="profileSyncBtn"><span><b>立即同步云端</b><small>将当前更改保存至你的账户</small></span><i>›</i></button>
+            <a href="https://github.com/theresome/project-progress-dashboard/releases/latest/download/%E9%A1%B9%E7%9B%AE%E8%BF%9B%E5%B1%95%E5%8F%B0-Windows-Setup.exe"><span><b>下载 Windows 客户端</b><small>在电脑桌面使用项目进展台</small></span><i>›</i></a>
+            <button id="profileSignOutBtn" class="danger-setting"><span><b>退出登录</b><small>退出后需要重新登录才能使用</small></span><i>›</i></button>
+          </article>
+        </div>
+      </div>
+    </section>
   </main>
 
   <dialog id="logDialog">
@@ -195,11 +221,12 @@
     <form method="dialog" id="authForm">
       <div class="dialog-head"><div><span class="kicker">用户账户</span><h2>登录并同步数据</h2></div><button class="close" type="button" data-close-dialog aria-label="关闭">×</button></div>
       <p class="form-note">登录后，当前浏览器中的项目数据会保存到你的云端账户，并可在其他设备读取。</p>
+      <label class="signup-only">用户名<input name="username" autocomplete="username" placeholder="3–24 位字母、数字、中文或下划线"></label>
       <label>邮箱<input name="email" type="email" required placeholder="name@example.com"></label>
       <label>密码<input name="password" type="password" minlength="6" required placeholder="至少 6 位密码"></label>
       <div class="auth-actions">
         <button class="primary" value="default">登录</button>
-        <button class="ghost" type="button" id="signUpBtn">注册新账户</button>
+        <button class="ghost" type="button" id="signUpBtn">切换到注册</button>
       </div>
       <p class="auth-message" id="authMessage"></p>
     </form>
@@ -207,12 +234,22 @@
 
   <dialog id="accountDialog">
     <div class="account-panel">
-      <div class="dialog-head"><div><span class="kicker">当前账户</span><h2 id="accountEmail"></h2></div><button class="close" type="button" data-close-dialog aria-label="关闭">×</button></div>
+      <div class="dialog-head"><div><span class="kicker">当前账户</span><h2 id="accountUsername"></h2><p class="account-email" id="accountEmail"></p></div><button class="close" type="button" data-close-dialog aria-label="关闭">×</button></div>
       <p class="form-note">数据已按你的账户隔离保存至 Supabase。</p>
       <p class="sync-error-detail" id="syncErrorDetail"></p>
       <button class="ghost wide" id="syncNowBtn">立即同步</button>
       <button class="delete-btn wide" id="signOutBtn">退出登录</button>
     </div>
+  </dialog>
+
+  <dialog id="profileDialog">
+    <form method="dialog" id="profileForm">
+      <div class="dialog-head"><div><span class="kicker">个人资料</span><h2>编辑我的资料</h2></div><button class="close" type="button" data-close-dialog aria-label="关闭">×</button></div>
+      <label>用户名<input name="username" required minlength="3" maxlength="24" placeholder="唯一用户名"></label>
+      <p class="form-note">用户名不可与其他用户重复，可使用中文、字母、数字和下划线。</p>
+      <button class="primary wide" value="default">保存个人资料</button>
+      <p class="auth-message" id="profileMessage"></p>
+    </form>
   </dialog>
 
   <div class="toast" id="toast"></div>

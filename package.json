@@ -39,13 +39,14 @@
       "artifactName": "${productName}-${version}-${arch}-setup.${ext}"
     },
     "nsis": {
+      "artifactName": "${productName}-Windows-Setup.${ext}",
       "oneClick": false,
       "allowToChangeInstallationDirectory": true,
       "createDesktopShortcut": true,
       "createStartMenuShortcut": true
     },
     "portable": {
-      "artifactName": "${productName}-${version}-${arch}-portable.${ext}"
+      "artifactName": "${productName}-Windows-Portable.${ext}"
     }
   }
 }
